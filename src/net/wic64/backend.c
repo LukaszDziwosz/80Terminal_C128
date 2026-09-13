@@ -53,6 +53,7 @@ static enum net_state connection;
 static uint16_t rx_length, rx_offset;
 static uint16_t available_after;
 static uint8_t available_failures;
+static uint8_t device_ready;
 static char message[74];
 
 static void set_message(const char *text)
@@ -68,6 +69,7 @@ static void bridge_error(uint8_t status, const char *operation)
         else if (operation[0] == 'a') set_message("WiC64 TCP AVAILABLE: user-port transfer timed out.");
         else if (operation[0] == 'r') set_message("WiC64 TCP READ: user-port transfer timed out.");
         else if (operation[0] == 'w') set_message("WiC64 TCP WRITE: user-port transfer timed out.");
+        else if (operation[0] == 'c') set_message("WiC64 TCP CLOSE: user-port transfer timed out.");
         else set_message("WiC64 detect: user-port transfer timed out.");
     }
     else if (status == WIC64_BRIDGE_TRUNCATED) set_message("WiC64 reply exceeded the 2560-byte terminal buffer.");
@@ -107,6 +109,7 @@ static int initialize(void)
 {
     uint8_t speed = platform_slow();
     uint8_t result;
+    device_ready = 0;
     /* This volatile read retains the embedded fixed-address bridge. */
     if (wic64_bridge_image[0] != 0x4c)
         result = WIC64_BRIDGE_TRUNCATED;
@@ -120,6 +123,7 @@ static int initialize(void)
         return result == WIC64_BRIDGE_TIMEOUT ? NET_NO_DEVICE : NET_IO_ERROR;
     }
     connection = NET_CLOSED;
+    device_ready = 1;
     set_message("WiC64 ready for direct TCP connections.");
     return NET_OK;
 }
@@ -149,6 +153,14 @@ static int connect_to(const char *hostname, uint16_t port)
     }
     HOST[i] = 0;
     speed = platform_slow();
+    /* The ESP socket outlives the loaded overlay. Close any previous session
+     * before opening, including one left behind by a failed transfer. */
+    result = wic64_close_bridge();
+    if (result) {
+        platform_restore_speed(speed);
+        bridge_error(result, "close"); connection = NET_FAILED; return NET_IO_ERROR;
+    }
+    rx_length = rx_offset = 0;
     result = wic64_open_bridge();
     platform_restore_speed(speed);
     if (result) {
@@ -218,12 +230,13 @@ static void close_connection(void)
 {
     uint8_t speed;
     if (connection == NET_CLOSED) return;
-    if (connection == NET_CONNECTED) {
+    if (device_ready) {
         speed = platform_slow();
         (void)wic64_close_bridge();
         platform_restore_speed(speed);
     }
     connection = NET_CLOSED;
+    rx_length = rx_offset = 0;
 }
 static struct net_backend backend = {
     "WiC64", message, initialize, connect_to, poll,

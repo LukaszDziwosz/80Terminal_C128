@@ -182,8 +182,7 @@ static void test_startup_offer(void)
     static const uint8_t expected[] = {
         IAC, WILL, 0, IAC, DO, 0,
         IAC, WILL, 3, IAC, DO, 3,
-        IAC, WILL, 24, IAC, WILL, 31,
-        IAC, SB, 31, 0, 80, 0, 25, IAC, SE
+        IAC, WILL, 24, IAC, WILL, 31
     };
     reset(TELNET_PROFILE_ANSI_80);
     telnet_startup();
@@ -192,6 +191,53 @@ static void test_startup_offer(void)
     sent_length = 0;
     feed((const uint8_t[]){IAC, DO, 24, IAC, SB, 24, 1, IAC, SE}, 9);
     expect_sent((const uint8_t[]){IAC, SB, 24, 0, 'A', 'N', 'S', 'I', IAC, SE}, 10);
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, DO, 31}, 3);
+    expect_sent((const uint8_t[]){IAC, SB, 31, 0, 80, 0, 25, IAC, SE}, 9);
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, DO, 31}, 3);
+    assert(sent_length == 0);
+}
+
+static void test_return_negotiation(void)
+{
+    reset(TELNET_PROFILE_ASCII_80);
+    telnet_startup();
+    sent_length = 0;
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13, 10}, 2);
+
+    /* Incoming binary acceptance does not enable outgoing binary. */
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, WILL, 0}, 3);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13, 10}, 2);
+
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, DO, 0}, 3);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13}, 1);
+
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, DONT, 0}, 3);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){IAC, WONT, 0, 13, 10}, 5);
+
+    reset(TELNET_PROFILE_ASCII_80);
+    telnet_startup();
+    sent_length = 0;
+    feed((const uint8_t[]){IAC, DONT, 0}, 3);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13, 10}, 2);
+
+    reset(TELNET_PROFILE_PETSCII_80);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13}, 1);
+
+    /* A new session resets accepted binary mode. */
+    reset(TELNET_PROFILE_ASCII_80);
+    telnet_send_enter();
+    expect_sent((const uint8_t[]){13, 10}, 2);
 }
 
 int main(void)
@@ -204,6 +250,7 @@ int main(void)
     test_outbound_iac_is_escaped();
     test_binary_request();
     test_startup_offer();
+    test_return_negotiation();
     puts("telnet tests passed");
     return 0;
 }

@@ -19,6 +19,7 @@ void telnet_init(enum telnet_profile profile,
 void telnet_startup(void);
 uint8_t telnet_receive(uint8_t input, uint8_t* output);
 void telnet_send_byte(uint8_t value);
+void telnet_send_enter(void);
 void telnet_request_binary(void);
 uint8_t telnet_profile_columns(enum telnet_profile profile);
 uint8_t telnet_profile_rows(enum telnet_profile profile);

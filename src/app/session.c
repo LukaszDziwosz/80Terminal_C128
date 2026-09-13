@@ -124,7 +124,8 @@ static void terminal(const struct net_backend *backend)
         if (key) {
             ++key_count;
             key_length = keyboard_encode(key, !ascii_mode, encoded);
-            for (k = 0; k < key_length; ++k) telnet_send_byte(encoded[k]);
+            if (key_length == 1 && encoded[0] == 13) telnet_send_enter();
+            else for (k = 0; k < key_length; ++k) telnet_send_byte(encoded[k]);
             if (local_echo && key_length == 1) {
                 if (!ascii_mode || encoded[0] == 13) putrch(encoded[0]);
                 else if (encoded[0] == 8) putrch(PETSCII_CURSOR_LEFT);
