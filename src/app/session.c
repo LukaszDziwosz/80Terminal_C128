@@ -3,6 +3,8 @@
 #include "session.h"
 #include "telnet.h"
 #include "platform.h"
+#include "keyboard.h"
+#include <stdio.h>
 
 static char hostname[65];
 static char port_text[6] = "23";
@@ -73,9 +75,12 @@ static void terminal(const struct net_backend *backend)
     int count, sent;
     uint16_t i;
     uint8_t key, value, last_cr = 0, petscii_escape = 0;
+    uint8_t encoded[3], key_length, k, local_echo = 0;
+    uint16_t key_count = 0, tx_count = 0;
+    char counters[64];
     out_length = out_offset = out_overflow = 0;
     clrscr();
-    line(0, "Connected - RUN/STOP disconnects. Remote echo; no local echo.");
+    line(0, "Connected - RUN/STOP disconnects. F1 toggles local echo (off).");
     gotoxy(0, 2);
     telnet_init(ascii_mode ? TELNET_PROFILE_ASCII_80 : TELNET_PROFILE_PETSCII_80, enqueue);
     telnet_startup();
@@ -85,6 +90,7 @@ static void terminal(const struct net_backend *backend)
         if (out_length > out_offset) {
             sent = backend->write(outgoing + out_offset, out_length - out_offset);
             if (sent < 0) break;
+            tx_count += (uint16_t)sent;
             out_offset += (uint16_t)sent;
             if (out_offset == out_length) out_offset = out_length = 0;
         }
@@ -112,19 +118,26 @@ static void terminal(const struct net_backend *backend)
                 }
             }
         }
-        if (ascii_mode) key = getchx();
-        else key = platform_key_raw();
+        key = platform_key_raw();
         if (key == PETSCII_STOP) break;
+        if (key == PETSCII_F1) { local_echo ^= 1; continue; }
         if (key) {
-            if (ascii_mode && key == 10) key = 13;
-            if (ascii_mode && key == PETSCII_DEL) key = 8;
-            telnet_send_byte(key);
+            ++key_count;
+            key_length = keyboard_encode(key, !ascii_mode, encoded);
+            for (k = 0; k < key_length; ++k) telnet_send_byte(encoded[k]);
+            if (local_echo && key_length == 1) {
+                if (!ascii_mode || encoded[0] == 13) putrch(encoded[0]);
+                else if (encoded[0] == 8) putrch(PETSCII_CURSOR_LEFT);
+                else if (encoded[0] >= 32) putch(encoded[0]);
+            }
         }
         if (out_overflow) break;
     }
     iocharmap(IOCHM_PETSCII_2);
     clrscr();
     line(5, out_overflow ? "Transmit queue overflow; session stopped." : backend->status);
+    sprintf(counters, "Keys read: %u   TCP bytes sent (incl. Telnet): %u", key_count, tx_count);
+    line(7, counters);
 }
 void session_open(const struct net_backend *backend)
 {

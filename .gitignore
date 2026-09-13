@@ -1,6 +1,12 @@
 /.tools/
 /build/
 /References/
+/third_party/wic64/*
+!/third_party/wic64/wic64.asm
+!/third_party/wic64/wic64.h
+!/third_party/wic64/README.md
+!/third_party/wic64/Changelog.md
+!/third_party/wic64/LICENSE.txt
 .DS_Store
 __pycache__/
 *.pyc

@@ -10,6 +10,11 @@ WiC64 firmware 2.1.0. Keyboard transmission and ANSI rendering are the next
 milestones. Ultimate detection remains unverified on the user's hardware;
 RR-Net is a scaffold. Shared Telnet, XMODEM and phonebook cores have tests.
 
+The next input build adds explicit PETSCII-to-ASCII keyboard mapping, cursor
+escape sequences, and F1 to toggle local echo (initially off). RUN/STOP shows
+counts of keys read and TCP bytes accepted, including Telnet negotiation.
+Keyboard interaction with a real BBS still needs hardware verification.
+
 ## Build
 
 Install Oscar64, ACME and VICE's `c1541`. `make` uses `.tools/oscar64/bin/oscar64`

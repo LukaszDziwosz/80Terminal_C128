@@ -5,12 +5,12 @@ HOST_CC ?= cc
 PYTHON ?= python3
 OSCARFLAGS ?= -tm=c128e -n -O2 -g -dNOFLOAT -dNOLONG
 SOURCES := $(shell find src include -type f \( -name '*.c' -o -name '*.h' \))
-APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c \
+APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keyboard.c \
                src/platform/c128/platform.c src/platform/c128/vdc_screen.c \
                src/net/unimplemented.c src/net/rrnet/backend.c \
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
-TESTS := telnet xmodem phonebook
+TESTS := telnet xmodem phonebook keyboard
 HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate
 
 .PHONY: all test test-oscar run clean help

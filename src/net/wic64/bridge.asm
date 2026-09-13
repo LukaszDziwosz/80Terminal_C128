@@ -228,6 +228,10 @@ bridge_write: !zone bridge_write {
     sta bridge_count+1
     lda bridge_count+1
     beq .copy
+    cmp #1
+    bne .too_large
+    lda bridge_count
+    beq .copy
 .too_large:
     lda #WIC_TRUNCATED
     rts
