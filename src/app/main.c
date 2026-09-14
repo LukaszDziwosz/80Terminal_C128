@@ -4,7 +4,7 @@
 #include "network.h"
 #include "platform.h"
 #include "vdc_screen.h"
-#include "session.h"
+#include "program.h"
 
 static void line(uint8_t row, const char *text)
 {
@@ -14,12 +14,11 @@ static void line(uint8_t row, const char *text)
 static void menu(void)
 {
     clrscr();
-    line(2, "80Terminal / Oscar64 foundation");
+    line(2, "80Terminal / Launcher");
     line(4, "Commodore 128 - 80 columns");
     line(7, "1 / F1   RR-Net");
     line(9, "2 / F3   1541 Ultimate II+");
     line(11, "3 / F5   WiC64");
-    line(15, "F7   CP437 font preview");
     line(17, "F8   Exit to BASIC");
     line(21, "WiC64 and Ultimate: direct TCP. RR-Net: work in progress.");
 }
@@ -40,11 +39,10 @@ static void select_backend(uint8_t choice)
         backend = choice == 1 ? rrnet_backend() :
                   choice == 2 ? ultimate_backend() : wic64_backend();
         line(2, backend->name);
-        int result = backend->init();
-        if (result == NET_NOT_IMPLEMENTED || result < 0) line(5, backend->status);
-        else session_open(backend);
+        program_run(backend);
+        return;
     }
-    line(18, "Press any key to return to the launcher.");
+    line(18, "Press any key to exit to BASIC.");
     getch();
     /* No overlay pointers survive a change of adapter. */
 }
@@ -55,10 +53,9 @@ int main(void)
     for (;;) {
         menu();
         key = getch();
-        if (key == '1' || key == PETSCII_F1) select_backend(1);
-        else if (key == '2' || key == PETSCII_F3) select_backend(2);
-        else if (key == '3' || key == PETSCII_F5) select_backend(3);
-        else if (key == PETSCII_F7) screen_font_preview(platform_device());
+        if (key == '1' || key == PETSCII_F1) { select_backend(1); break; }
+        else if (key == '2' || key == PETSCII_F3) { select_backend(2); break; }
+        else if (key == '3' || key == PETSCII_F5) { select_backend(3); break; }
         else if (key == PETSCII_F8 || key == 'q') break;
     }
     platform_exit();

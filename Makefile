@@ -6,7 +6,7 @@ PYTHON ?= python3
 OSCARFLAGS ?= -tm=c128e -n -O2 -g -dNOFLOAT -dNOLONG
 SOURCES := $(shell find src include -type f \( -name '*.c' -o -name '*.h' \))
 APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keyboard.c src/core/ansi_terminal.c \
-               src/platform/c128/platform.c src/platform/c128/vdc_screen.c \
+               src/app/program.c src/platform/c128/platform.c src/platform/c128/vdc_screen.c \
                src/net/unimplemented.c src/net/rrnet/backend.c \
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
@@ -50,6 +50,7 @@ test-oscar: build/wic64bridge.bin | build
 	done
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
 	$(OSCAR64) -n -O2 -ea -o=build/test-wic64-bridge.prg tests/wic64_bridge_test.c
+	$(OSCAR64) -n -O2 -ea -dPLATFORM_TEST -i=include -o=build/test-platform.prg tests/platform_test.c src/platform/c128/platform.c
 
 run: all
 	$(X128) -80col -autostart build/80terminal.d64

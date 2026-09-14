@@ -18,6 +18,7 @@ static uint16_t chars, attrs;
 static uint8_t x, y, saved_x, saved_y, state, params[8], count, private_mark;
 static uint8_t attr, wrap, autowrap, cursor_visible, application_cursor;
 static uint8_t newline_mode, scroll_top, scroll_bottom;
+static uint8_t batch_update;
 static ansi_send_callback send_bytes;
 
 static uint16_t address(uint8_t col, uint8_t row)
@@ -27,7 +28,18 @@ static uint16_t attr_address(uint8_t col, uint8_t row)
 static uint8_t parameter(uint8_t n, uint8_t fallback)
 { return n >= count || !params[n] ? fallback : params[n]; }
 static void cursor(void)
-{ screen_set_cursor(address(x, y), cursor_visible); }
+{ if (!batch_update) screen_set_cursor(address(x, y), cursor_visible); }
+void ansi_terminal_begin_update(void)
+{
+    if (!batch_update) screen_set_cursor(address(x, y), 0);
+    batch_update = 1;
+}
+void ansi_terminal_end_update(void)
+{
+    if (!batch_update || state != ST_TEXT) return;
+    batch_update = 0;
+    cursor();
+}
 static uint8_t color(uint8_t n, uint8_t bright)
 {
     static const uint8_t normal[8] = {0,8,4,12,2,10,6,14};
@@ -149,7 +161,9 @@ uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device)
     attrs = ((uint16_t)screen_reg_read(20) << 8) | screen_reg_read(21);
     send_bytes = send; x = y = saved_x = saved_y = 0; state = ST_TEXT; attr = 0x0f;
     wrap = 0; autowrap = 1; cursor_visible = 1; application_cursor = newline_mode = 0;
-    scroll_top = 0; scroll_bottom = H - 1; clear_screen(0, H - 1); cursor(); return 1;
+    batch_update = 1;
+    screen_set_cursor(address(x, y), 0);
+    scroll_top = 0; scroll_bottom = H - 1; clear_screen(0, H - 1); return 1;
 }
 void ansi_terminal_shutdown(void) { screen_set_cursor(address(x, y), 0); screen_restore_font(); }
 void ansi_terminal_receive(uint8_t value)

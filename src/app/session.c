@@ -82,6 +82,8 @@ static void terminal(const struct net_backend *backend)
     uint8_t key, value, petscii_escape = 0;
     uint8_t encoded[5], key_length, k;
     uint16_t key_count = 0, tx_count = 0;
+    uint16_t last_receive = 0;
+    uint8_t cursor_pending = 0;
     char counters[64];
     out_length = out_offset = out_overflow = 0;
     telnet_init(ascii_mode ? TELNET_PROFILE_ANSI_80 : TELNET_PROFILE_PETSCII_80, enqueue);
@@ -111,6 +113,7 @@ static void terminal(const struct net_backend *backend)
         /* One bounded input batch leaves time for keyboard and driver work. */
         count = backend->read(incoming, sizeof(incoming));
         if (count < 0) break;
+        if (ascii_mode && count) ansi_terminal_begin_update();
         for (i = 0; i < (uint16_t)count; ++i) {
             if (!telnet_receive(incoming[i], &value)) continue;
             if (ascii_mode) {
@@ -121,6 +124,14 @@ static void terminal(const struct net_backend *backend)
                 if (value == 27) { petscii_escape = 1; continue; }
                 putrch(value);
             }
+        }
+        if (ascii_mode && count) {
+            last_receive = platform_ticks();
+            cursor_pending = 1;
+        } else if (ascii_mode && cursor_pending &&
+                   (uint16_t)(platform_ticks() - last_receive) >= 8) {
+            ansi_terminal_end_update();
+            cursor_pending = 0;
         }
         key = platform_key_raw();
         if (key == PETSCII_STOP) break;
@@ -139,6 +150,8 @@ static void terminal(const struct net_backend *backend)
     line(5, out_overflow ? "Transmit queue overflow; session stopped." : backend->status);
     sprintf(counters, "Keys read: %u   TCP bytes sent (incl. Telnet): %u", key_count, tx_count);
     line(7, counters);
+    line(20, "Press any key to return to the main screen.");
+    getch();
 }
 void session_open(const struct net_backend *backend)
 {
@@ -185,7 +198,7 @@ void session_open(const struct net_backend *backend)
     line(18, "WiC64 opens are synchronous; this can take several seconds.");
     if (backend->connect(hostname, (uint16_t)port) < 0) {
         line(10, backend->status);
-        line(20, "Press any key to return to the launcher.");
+        line(20, "Press any key to return to the main screen.");
         getch(); shutdown(backend); return;
     }
     clrscr();

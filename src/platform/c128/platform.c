@@ -1,6 +1,9 @@
+#ifndef PLATFORM_TEST
 #include <conio.h>
+#endif
 #include "platform.h"
 
+#ifndef PLATFORM_TEST
 static uint8_t boot_device;
 static uint8_t entry_speed;
 
@@ -32,9 +35,10 @@ void platform_exit(void)
     clrscr();
     platform_restore_speed(entry_speed);
 }
+#endif
 uint16_t platform_ticks(void)
 {
-    return __asm {
+    return __asm volatile {
         jsr $ffde
         sta accu
         stx accu + 1
@@ -42,5 +46,5 @@ uint16_t platform_ticks(void)
 }
 uint8_t platform_key_raw(void)
 {
-    return __asm { jsr $ffe4; sta accu };
+    return __asm volatile { jsr $ffe4; sta accu };
 }

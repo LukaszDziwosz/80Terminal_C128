@@ -3,6 +3,14 @@
 Oscar64 terminal for the Commodore 128's 80-column display. The launcher loads
 one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 
+Device selection is a one-time launch step. The selected adapter stays loaded
+while the shared main screen owns connections: F3 opens the terminal, F1 retries
+interface initialization, F7 previews the font, and F8 exits to BASIC. Cancelling
+or disconnecting returns to this main screen. The implementation uses a resident
+shared program with a selected adapter overlay; it does not yet package three
+standalone executables. The shared phonebook data core is present; its UI is
+still to be ported.
+
 ## Current baseline
 
 WiC64 detection and fast TCP reception are verified on real C128 hardware with
