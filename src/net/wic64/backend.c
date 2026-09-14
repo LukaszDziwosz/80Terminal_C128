@@ -182,30 +182,28 @@ static int connect_to(const char *hostname, uint16_t port)
 static void poll(void)
 {
     uint8_t speed, result;
-    uint16_t available = 0;
     if (connection != NET_CONNECTED || rx_offset != rx_length) return;
     if ((int16_t)(platform_ticks() - available_after) < 0) return;
     speed = platform_slow();
-    result = wic64_available_bridge();
-    if (!result) {
-        available = WORD_AT(WIC64_MAILBOX_AVAILABLE);
-        if (available) result = wic64_read_bridge();
-    }
+    /* Firmware implements TCP_READ as a successful zero-length response when
+     * WiFiClient::available() is zero. Calling it directly replaces the
+     * AVAILABLE then READ pair with one atomic transaction, avoiding a race
+     * between the two requests and halving user-port traffic. */
+    result = wic64_read_bridge();
     platform_restore_speed(speed);
-    if (result && !available) {
+    if (result) {
         /* Retry transient firmware statuses briefly after TCP_OPEN instead
          * of abandoning a socket while it settles. */
         available_after = (uint16_t)(platform_ticks() + 6);
         if (++available_failures <= 10) return;
-        bridge_error(result, "available");
+        bridge_error(result, "read");
         connection = NET_FAILED;
         return;
     }
-    if (result) { bridge_error(result, "read"); connection = NET_FAILED; return; }
     available_failures = 0;
     available_after = (uint16_t)(platform_ticks() + WIC64_IDLE_POLL_TICKS);
-    if (available) {
-        rx_length = WORD_AT(WIC64_MAILBOX_RX_LENGTH);
+    rx_length = WORD_AT(WIC64_MAILBOX_RX_LENGTH);
+    if (rx_length) {
         rx_offset = 0;
     }
 }
