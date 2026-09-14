@@ -5,8 +5,8 @@
 
 #pragma code(wiccode)
 
-/* $8200-$8fff is high RAM reserved for WiC64 transfers. The resident program
- * ends its heap at $8000 and reserves only $8000-$81ff for its runtime stack. */
+/* RX owns $6000-$7fff; the stack owns $8000-$81ff. Control mailboxes and TX
+ * remain above the stack. All three ranges are excluded from the heap. */
 #define WORD_AT(address) (*(volatile uint16_t *)(address))
 #define HOST ((volatile char *)WIC64_MAILBOX_HOST)
 #define TX ((volatile uint8_t *)WIC64_MAILBOX_TX)
@@ -78,7 +78,7 @@ static void bridge_error(uint8_t status, const char *operation)
         else if (operation[0] == 'c') set_message("WiC64 TCP CLOSE: user-port transfer timed out.");
         else set_message("WiC64 detect: user-port transfer timed out.");
     }
-    else if (status == WIC64_BRIDGE_TRUNCATED) set_message("WiC64 reply exceeded the 2560-byte terminal buffer.");
+    else if (status == WIC64_BRIDGE_TRUNCATED) set_message("WiC64 transfer exceeded its reserved buffer.");
     else if (status == WIC64_BRIDGE_LEGACY) set_message("WiC64 firmware 2.0.0 or newer is required.");
     else if (status) {
         uint8_t speed, result, i = 0;

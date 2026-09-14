@@ -6,7 +6,7 @@
 
 MB_HOST       = $8200          ; zero-terminated host:port (80 bytes)
 MB_TX         = $8280          ; outgoing bytes (512 bytes)
-MB_RX         = $8480          ; incoming bytes (2560 bytes)
+MB_RX         = $6000          ; incoming bytes (8192 bytes, below runtime stack)
 MB_DISCARD    = $8e80          ; 128-byte overflow drain area
 MB_ERROR      = $8f00          ; firmware status text (128 bytes)
 MB_RX_LENGTH  = $8f80          ; little-endian copied receive length
@@ -123,7 +123,7 @@ bridge_read: !zone bridge_read {
     jmp .finished
 .has_data:
     lda bridge_copied+1
-    cmp #10
+    cmp #32
     bcc .room
     jmp .discard
 .room:

@@ -1,10 +1,13 @@
+#ifndef VDC_TEST
 #include <conio.h>
 #include <c64/kernalio.h>
+#endif
 #include "platform.h"
 #include "vdc_screen.h"
 
 #define VDC_INDEX (*(volatile uint8_t *)0xd600)
 #define VDC_DATA (*(volatile uint8_t *)0xd601)
+#ifndef VDC_TEST
 static uint8_t font_chunk[256];
 static uint8_t saved_font_reg;
 static uint8_t font_active;
@@ -18,24 +21,40 @@ uint8_t screen_reg_read(uint8_t reg)
 {
     ready(); VDC_INDEX = reg; ready(); return VDC_DATA;
 }
+#endif
+static void update_address(uint16_t address)
+{
+#ifdef VDC_TEST
+    screen_reg_write(18, (uint8_t)(address >> 8));
+    screen_reg_write(19, (uint8_t)address);
+#else
+    /* Keep these as direct volatile accesses.  The pinned Oscar64 incorrectly
+     * reused the high-byte argument across two screen_reg_write() calls. */
+    ready(); VDC_INDEX = 18;
+    ready(); VDC_DATA = (uint8_t)(address >> 8);
+    ready(); VDC_INDEX = 19;
+    ready(); VDC_DATA = (uint8_t)address;
+#endif
+}
+#ifndef VDC_TEST
 void screen_write_run(uint16_t address, const uint8_t *data, uint16_t length)
 {
     if (!length) return;
-    screen_reg_write(18, (uint8_t)(address >> 8));
-    screen_reg_write(19, (uint8_t)address);
+    update_address(address);
     ready(); VDC_INDEX = 31;
     while (length--) { ready(); VDC_DATA = *data++; }
 }
+#endif
 void screen_fill_run(uint16_t address, uint8_t value, uint16_t length)
 {
     uint16_t chunk;
     while (length) {
         chunk = length > 256 ? 256 : length;
-        screen_reg_write(18, (uint8_t)(address >> 8));
-        screen_reg_write(19, (uint8_t)address);
+        update_address(address);
         screen_reg_write(24, screen_reg_read(24) & 0x7f);
         screen_reg_write(31, value);
-        screen_reg_write(30, chunk == 256 ? 0 : (uint8_t)chunk);
+        /* Writing DATA already writes one byte and advances the address. */
+        if (chunk > 1) screen_reg_write(30, (uint8_t)(chunk - 1));
         address += chunk; length -= chunk;
     }
 }
@@ -45,8 +64,7 @@ void screen_copy_run(uint16_t destination, uint16_t source, uint16_t length)
     uint8_t control = screen_reg_read(24) & 0x7f;
     while (length) {
         chunk = length > 256 ? 256 : length;
-        screen_reg_write(18, (uint8_t)(destination >> 8));
-        screen_reg_write(19, (uint8_t)destination);
+        update_address(destination);
         screen_reg_write(24, control | 0x80);
         screen_reg_write(32, (uint8_t)(source >> 8));
         screen_reg_write(33, (uint8_t)source);
@@ -65,6 +83,7 @@ void screen_set_cursor(uint16_t address, uint8_t visible)
     screen_reg_write(10, start | (visible ? 0x60 : 0x20) |
                      (screen_reg_read(9) & 0x1f));
 }
+#ifndef VDC_TEST
 void screen_restore_font(void)
 {
     if (!font_active) return;
@@ -132,3 +151,4 @@ void screen_font_preview(uint8_t device)
     getch();
     screen_restore_font();
 }
+#endif
