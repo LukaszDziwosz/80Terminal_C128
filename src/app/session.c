@@ -52,6 +52,10 @@ static void enqueue(const uint8_t *data, uint8_t length)
     memcpy(outgoing + out_length, data, length);
     out_length += length;
 }
+static void ansi_send_terminal(const uint8_t *data, uint8_t length)
+{
+    while (length--) telnet_send_byte(*data++);
+}
 static uint8_t wait_ready(const struct net_backend *backend)
 {
     enum net_state state;
@@ -81,7 +85,7 @@ static void terminal(const struct net_backend *backend)
     char counters[64];
     out_length = out_offset = out_overflow = 0;
     telnet_init(ascii_mode ? TELNET_PROFILE_VT100_80 : TELNET_PROFILE_PETSCII_80, enqueue);
-    if (ascii_mode && !ansi_terminal_init(enqueue, platform_device())) {
+    if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device())) {
         clrscr();
         line(5, "Could not load CP437 font from the boot disk.");
         getch();
@@ -92,7 +96,6 @@ static void terminal(const struct net_backend *backend)
         line(0, "Connected - RUN/STOP disconnects. Remote echo; no local echo.");
         gotoxy(0, 2);
     }
-    telnet_startup();
     for (;;) {
         /* Send our Telnet identity before the first receive poll. This is
          * required by BBSes which gate their banner on terminal negotiation. */

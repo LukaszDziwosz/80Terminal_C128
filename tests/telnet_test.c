@@ -177,33 +177,9 @@ static void test_binary_request(void)
     expect_sent(expected, sizeof(expected));
 }
 
-static void test_startup_offer(void)
-{
-    static const uint8_t expected[] = {
-        IAC, WILL, 0, IAC, DO, 0,
-        IAC, WILL, 3, IAC, DO, 3,
-        IAC, WILL, 24, IAC, WILL, 31
-    };
-    reset(TELNET_PROFILE_ANSI_80);
-    telnet_startup();
-    expect_sent(expected, sizeof(expected));
-    /* The server may still ask for type; the offer prevents duplicate WILL. */
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DO, 24, IAC, SB, 24, 1, IAC, SE}, 9);
-    expect_sent((const uint8_t[]){IAC, SB, 24, 0, 'A', 'N', 'S', 'I', IAC, SE}, 10);
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DO, 31}, 3);
-    expect_sent((const uint8_t[]){IAC, SB, 31, 0, 80, 0, 25, IAC, SE}, 9);
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DO, 31}, 3);
-    assert(sent_length == 0);
-}
-
 static void test_return_negotiation(void)
 {
     reset(TELNET_PROFILE_ASCII_80);
-    telnet_startup();
-    sent_length = 0;
     telnet_send_enter();
     expect_sent((const uint8_t[]){13}, 1);
 
@@ -226,7 +202,6 @@ int main(void)
     test_subnegotiation_is_not_displayed();
     test_outbound_iac_is_escaped();
     test_binary_request();
-    test_startup_offer();
     test_return_negotiation();
     puts("telnet tests passed");
     return 0;

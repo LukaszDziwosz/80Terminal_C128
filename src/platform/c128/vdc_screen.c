@@ -93,8 +93,12 @@ uint8_t screen_load_cp437(uint8_t device)
             ok = 0;
             break;
         }
-        screen_write_run(0x2000 + offset, font_chunk, 256);
-        screen_write_run(0x3000 + offset, font_chunk, 256);
+        /* VDC alternate characters 0..127 are normal ASCII, while the
+         * normal bank holds CP437 128..255 as character codes 0..127. */
+        if (offset < 2048)
+            screen_write_run(0x3000 + offset, font_chunk, 256);
+        else
+            screen_write_run(0x2000 + offset - 2048, font_chunk, 256);
     }
     /* A trailing byte or I/O error also rejects a malformed font. */
     if (ok && krnio_read(2, (char *)font_chunk, 1) != 0) ok = 0;

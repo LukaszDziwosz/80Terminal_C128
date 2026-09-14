@@ -45,7 +45,6 @@ static uint8_t suboption_first;
 static uint8_t suboption_length;
 static uint8_t remote_options;
 static uint8_t local_options;
-static uint8_t local_pending, remote_pending;
 static enum telnet_profile current_profile;
 static telnet_send_callback send_bytes;
 
@@ -160,28 +159,22 @@ static void negotiate(uint8_t option)
             send_command(TELNET_DONT, option);
         } else if ((remote_options & flag) == 0) {
             remote_options |= flag;
-            if (!(remote_pending & flag)) send_command(TELNET_DO, option);
-            remote_pending &= (uint8_t)~flag;
+            send_command(TELNET_DO, option);
         }
     } else if (command == TELNET_WONT) {
-        if (remote_options & flag) send_command(TELNET_DONT, option);
         remote_options &= (uint8_t)~flag;
-        remote_pending &= (uint8_t)~flag;
     } else if (command == TELNET_DO) {
         if (!accept_local_option(option)) {
             send_command(TELNET_WONT, option);
         } else if ((local_options & flag) == 0) {
             local_options |= flag;
-            if (!(local_pending & flag)) send_command(TELNET_WILL, option);
-            local_pending &= (uint8_t)~flag;
+            send_command(TELNET_WILL, option);
             if (option == TELNET_OPTION_NAWS) {
                 send_window_size();
             }
         }
     } else {
-        if (local_options & flag) send_command(TELNET_WONT, option);
         local_options &= (uint8_t)~flag;
-        local_pending &= (uint8_t)~flag;
     }
 }
 
@@ -205,24 +198,8 @@ void telnet_init(enum telnet_profile profile,
     suboption_length = 0;
     remote_options = 0;
     local_options = 0;
-    local_pending = remote_pending = 0;
     current_profile = profile;
     send_bytes = send_callback;
-}
-
-void telnet_startup(void)
-{
-    /* Offers are pending until acknowledged. In particular, sending WILL
-     * BINARY does not yet permit binary transmission. */
-    local_pending |= TELNET_FLAG_BINARY | TELNET_FLAG_SGA |
-                     TELNET_FLAG_TTYPE | TELNET_FLAG_NAWS;
-    remote_pending |= TELNET_FLAG_BINARY | TELNET_FLAG_SGA;
-    send_command(TELNET_WILL, TELNET_OPTION_BINARY);
-    send_command(TELNET_DO, TELNET_OPTION_BINARY);
-    send_command(TELNET_WILL, TELNET_OPTION_SGA);
-    send_command(TELNET_DO, TELNET_OPTION_SGA);
-    send_command(TELNET_WILL, TELNET_OPTION_TTYPE);
-    send_command(TELNET_WILL, TELNET_OPTION_NAWS);
 }
 
 uint8_t telnet_receive(uint8_t input, uint8_t* output)
@@ -311,14 +288,8 @@ void telnet_send_byte(uint8_t value)
 
 void telnet_request_binary(void)
 {
-    if (!((remote_options | remote_pending) & TELNET_FLAG_BINARY)) {
-        remote_pending |= TELNET_FLAG_BINARY;
-        send_command(TELNET_DO, TELNET_OPTION_BINARY);
-    }
-    if (!((local_options | local_pending) & TELNET_FLAG_BINARY)) {
-        local_pending |= TELNET_FLAG_BINARY;
-        send_command(TELNET_WILL, TELNET_OPTION_BINARY);
-    }
+    send_command(TELNET_DO, TELNET_OPTION_BINARY);
+    send_command(TELNET_WILL, TELNET_OPTION_BINARY);
 }
 
 void telnet_send_enter(void)

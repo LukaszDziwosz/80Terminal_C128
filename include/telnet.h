@@ -15,8 +15,6 @@ typedef void (*telnet_send_callback)(const uint8_t* data, uint8_t length);
 
 void telnet_init(enum telnet_profile profile,
                  telnet_send_callback send_callback);
-/* Advertise the options a terminal needs before the first receive poll. */
-void telnet_startup(void);
 uint8_t telnet_receive(uint8_t input, uint8_t* output);
 void telnet_send_byte(uint8_t value);
 void telnet_send_enter(void);
