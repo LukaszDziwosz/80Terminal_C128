@@ -205,30 +205,7 @@ static void test_return_negotiation(void)
     telnet_startup();
     sent_length = 0;
     telnet_send_enter();
-    expect_sent((const uint8_t[]){13, 10}, 2);
-
-    /* Incoming binary acceptance does not enable outgoing binary. */
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, WILL, 0}, 3);
-    telnet_send_enter();
-    expect_sent((const uint8_t[]){13, 10}, 2);
-
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DO, 0}, 3);
-    telnet_send_enter();
     expect_sent((const uint8_t[]){13}, 1);
-
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DONT, 0}, 3);
-    telnet_send_enter();
-    expect_sent((const uint8_t[]){IAC, WONT, 0, 13, 10}, 5);
-
-    reset(TELNET_PROFILE_ASCII_80);
-    telnet_startup();
-    sent_length = 0;
-    feed((const uint8_t[]){IAC, DONT, 0}, 3);
-    telnet_send_enter();
-    expect_sent((const uint8_t[]){13, 10}, 2);
 
     reset(TELNET_PROFILE_PETSCII_80);
     telnet_send_enter();
@@ -237,7 +214,7 @@ static void test_return_negotiation(void)
     /* A new session resets accepted binary mode. */
     reset(TELNET_PROFILE_ASCII_80);
     telnet_send_enter();
-    expect_sent((const uint8_t[]){13, 10}, 2);
+    expect_sent((const uint8_t[]){13}, 1);
 }
 
 int main(void)

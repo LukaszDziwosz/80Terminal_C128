@@ -6,14 +6,14 @@ one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 ## Current baseline
 
 WiC64 detection and fast TCP reception are verified on real C128 hardware with
-WiC64 firmware 2.1.0. Keyboard transmission and ANSI rendering are the next
-milestones. Ultimate detection remains unverified on the user's hardware;
+WiC64 firmware 2.1.0. The ANSI/VT100 path uses the C128 VDC directly, loads
+the CP437 font, and supports cursor motion, clearing, scrolling, colors,
+terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests;
+real BBS interaction remains the next hardware check. Ultimate detection remains unverified on the user's hardware;
 RR-Net is a scaffold. Shared Telnet, XMODEM and phonebook cores have tests.
 
-The next input build adds explicit PETSCII-to-ASCII keyboard mapping, cursor
-escape sequences, and F1 to toggle local echo (initially off). RUN/STOP shows
-counts of keys read and TCP bytes accepted, including Telnet negotiation.
-Keyboard interaction with a real BBS still needs hardware verification.
+The PETSCII terminal keeps its native input mapping. RUN/STOP shows counts of
+keys read and TCP bytes accepted, including Telnet negotiation.
 
 ## Build
 

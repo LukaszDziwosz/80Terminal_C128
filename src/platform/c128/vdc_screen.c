@@ -26,6 +26,45 @@ void screen_write_run(uint16_t address, const uint8_t *data, uint16_t length)
     ready(); VDC_INDEX = 31;
     while (length--) { ready(); VDC_DATA = *data++; }
 }
+void screen_fill_run(uint16_t address, uint8_t value, uint16_t length)
+{
+    uint16_t chunk;
+    while (length) {
+        chunk = length > 256 ? 256 : length;
+        screen_reg_write(18, (uint8_t)(address >> 8));
+        screen_reg_write(19, (uint8_t)address);
+        screen_reg_write(24, screen_reg_read(24) & 0x7f);
+        screen_reg_write(31, value);
+        screen_reg_write(30, chunk == 256 ? 0 : (uint8_t)chunk);
+        address += chunk; length -= chunk;
+    }
+}
+void screen_copy_run(uint16_t destination, uint16_t source, uint16_t length)
+{
+    uint16_t chunk;
+    uint8_t control = screen_reg_read(24) & 0x7f;
+    while (length) {
+        chunk = length > 256 ? 256 : length;
+        screen_reg_write(18, (uint8_t)(destination >> 8));
+        screen_reg_write(19, (uint8_t)destination);
+        screen_reg_write(24, control | 0x80);
+        screen_reg_write(32, (uint8_t)(source >> 8));
+        screen_reg_write(33, (uint8_t)source);
+        screen_reg_write(30, chunk == 256 ? 0 : (uint8_t)chunk);
+        destination += chunk; source += chunk; length -= chunk;
+    }
+    screen_reg_write(24, control);
+}
+void screen_set_cursor(uint16_t address, uint8_t visible)
+{
+    uint8_t start = screen_reg_read(10) & 0x9f;
+    uint8_t end = screen_reg_read(11) & 0xe0;
+    screen_reg_write(14, (uint8_t)(address >> 8));
+    screen_reg_write(15, (uint8_t)address);
+    screen_reg_write(11, end | (screen_reg_read(9) & 0x1f));
+    screen_reg_write(10, start | (visible ? 0x60 : 0x20) |
+                     (screen_reg_read(9) & 0x1f));
+}
 void screen_restore_font(void)
 {
     if (!font_active) return;

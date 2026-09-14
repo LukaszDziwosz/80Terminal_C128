@@ -4,6 +4,7 @@
 #include "telnet.h"
 #include "platform.h"
 #include "keyboard.h"
+#include "ansi_terminal.h"
 #include <stdio.h>
 
 static char hostname[65];
@@ -74,15 +75,23 @@ static void terminal(const struct net_backend *backend)
 {
     int count, sent;
     uint16_t i;
-    uint8_t key, value, last_cr = 0, petscii_escape = 0;
-    uint8_t encoded[3], key_length, k, local_echo = 0;
+    uint8_t key, value, petscii_escape = 0;
+    uint8_t encoded[5], key_length, k;
     uint16_t key_count = 0, tx_count = 0;
     char counters[64];
     out_length = out_offset = out_overflow = 0;
-    clrscr();
-    line(0, "Connected - RUN/STOP disconnects. F1 toggles local echo (off).");
-    gotoxy(0, 2);
-    telnet_init(ascii_mode ? TELNET_PROFILE_ASCII_80 : TELNET_PROFILE_PETSCII_80, enqueue);
+    telnet_init(ascii_mode ? TELNET_PROFILE_VT100_80 : TELNET_PROFILE_PETSCII_80, enqueue);
+    if (ascii_mode && !ansi_terminal_init(enqueue, platform_device())) {
+        clrscr();
+        line(5, "Could not load CP437 font from the boot disk.");
+        getch();
+        return;
+    }
+    if (!ascii_mode) {
+        clrscr();
+        line(0, "Connected - RUN/STOP disconnects. Remote echo; no local echo.");
+        gotoxy(0, 2);
+    }
     telnet_startup();
     for (;;) {
         /* Send our Telnet identity before the first receive poll. This is
@@ -101,39 +110,27 @@ static void terminal(const struct net_backend *backend)
         if (count < 0) break;
         for (i = 0; i < (uint16_t)count; ++i) {
             if (!telnet_receive(incoming[i], &value)) continue;
-            if (!ascii_mode) {
+            if (ascii_mode) {
+                ansi_terminal_receive(value);
+            } else {
                 /* C128 ESC X swaps displays: terminal remains 80-column only. */
                 if (petscii_escape) { petscii_escape = 0; continue; }
                 if (value == 27) { petscii_escape = 1; continue; }
                 putrch(value);
-            } else if (value == 13) { putrch(13); last_cr = 1; }
-            else if (value == 10) { if (!last_cr) putrch(13); last_cr = 0; }
-            else {
-                last_cr = 0;
-                if (value >= 32 && value <= 126) putch(value);
-                else if (value == 8) putrch(PETSCII_CURSOR_LEFT);
-                else if (value == 9) {
-                    uint8_t spaces = 8 - (wherex() & 7);
-                    while (spaces--) putch(' ');
-                }
             }
         }
         key = platform_key_raw();
         if (key == PETSCII_STOP) break;
-        if (key == PETSCII_F1) { local_echo ^= 1; continue; }
         if (key) {
             ++key_count;
-            key_length = keyboard_encode(key, !ascii_mode, encoded);
+            key_length = ascii_mode ? ansi_terminal_key(key, encoded) :
+                                      keyboard_encode(key, 1, encoded);
             if (key_length == 1 && encoded[0] == 13) telnet_send_enter();
             else for (k = 0; k < key_length; ++k) telnet_send_byte(encoded[k]);
-            if (local_echo && key_length == 1) {
-                if (!ascii_mode || encoded[0] == 13) putrch(encoded[0]);
-                else if (encoded[0] == 8) putrch(PETSCII_CURSOR_LEFT);
-                else if (encoded[0] >= 32) putch(encoded[0]);
-            }
         }
         if (out_overflow) break;
     }
+    if (ascii_mode) ansi_terminal_shutdown();
     iocharmap(IOCHM_PETSCII_2);
     clrscr();
     line(5, out_overflow ? "Transmit queue overflow; session stopped." : backend->status);
@@ -171,8 +168,8 @@ void session_open(const struct net_backend *backend)
         if (port > 0 && port <= 65535) break;
         line(14, "Invalid port. Press a key to try again."); getch();
     }
-    line(12, "1  Plain ASCII/Telnet (DUMB)     2  PETSCII 80/Telnet");
-    line(14, "Full ANSI/VT100 rendering will follow in a later milestone.");
+    line(12, "1  ANSI/VT100 80 columns         2  PETSCII 80/Telnet");
+    line(14, "ANSI sends terminal identification, cursor and status replies.");
     do { key = getch(); if (cancelled(key)) { shutdown(backend); return; } }
     while (key != '1' && key != '2');
     ascii_mode = key == '1';

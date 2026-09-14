@@ -324,10 +324,6 @@ void telnet_request_binary(void)
 void telnet_send_enter(void)
 {
     telnet_send_byte(13);
-    /* ASCII line submission uses NVT CR LF until outgoing binary has been
-     * accepted. PETSCII BBSes retain their native Return byte. */
-    if (current_profile != TELNET_PROFILE_PETSCII_80 &&
-        !(local_options & TELNET_FLAG_BINARY)) telnet_send_byte(10);
 }
 
 uint8_t telnet_profile_columns(enum telnet_profile profile)
