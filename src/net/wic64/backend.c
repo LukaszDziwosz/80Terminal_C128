@@ -56,6 +56,12 @@ static uint8_t available_failures;
 static uint8_t device_ready;
 static char message[74];
 
+/* TCP_AVAILABLE is a complete user-port transaction. Polling it for every
+ * C128 jiffy leaves an ESP busy nearly continuously and eventually starves
+ * interactive TCP writes. Ten idle polls per second remain responsive while
+ * leaving the WiC64 time to service its socket. */
+#define WIC64_IDLE_POLL_TICKS 6
+
 static void set_message(const char *text)
 {
     uint8_t i = 0;
@@ -197,7 +203,7 @@ static void poll(void)
     }
     if (result) { bridge_error(result, "read"); connection = NET_FAILED; return; }
     available_failures = 0;
-    available_after = (uint16_t)(platform_ticks() + 1);
+    available_after = (uint16_t)(platform_ticks() + WIC64_IDLE_POLL_TICKS);
     if (available) {
         rx_length = WORD_AT(WIC64_MAILBOX_RX_LENGTH);
         rx_offset = 0;
@@ -223,6 +229,9 @@ static int transmit(const uint8_t *buffer, uint16_t length)
     result = wic64_write_bridge();
     platform_restore_speed(speed);
     if (result) { bridge_error(result, "write"); connection = NET_FAILED; return NET_IO_ERROR; }
+    /* A BBS often replies to Return immediately; do not wait for the idle
+     * poll deadline after an accepted write. */
+    available_after = platform_ticks();
     return (int)length;
 }
 static int state(void) { return (int)connection; }

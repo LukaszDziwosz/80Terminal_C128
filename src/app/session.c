@@ -84,7 +84,7 @@ static void terminal(const struct net_backend *backend)
     uint16_t key_count = 0, tx_count = 0;
     char counters[64];
     out_length = out_offset = out_overflow = 0;
-    telnet_init(ascii_mode ? TELNET_PROFILE_VT100_80 : TELNET_PROFILE_PETSCII_80, enqueue);
+    telnet_init(ascii_mode ? TELNET_PROFILE_ANSI_80 : TELNET_PROFILE_PETSCII_80, enqueue);
     if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device())) {
         clrscr();
         line(5, "Could not load CP437 font from the boot disk.");
