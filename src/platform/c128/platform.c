@@ -6,6 +6,7 @@
 #ifndef PLATFORM_TEST
 static uint8_t boot_device;
 static uint8_t entry_speed;
+static uint8_t saved_key_store[2];
 
 void platform_init(void)
 {
@@ -13,6 +14,13 @@ void platform_init(void)
     boot_device = *(volatile uint8_t *)0xba;
     if (boot_device < 8 || boot_device > 30) boot_device = 8;
     entry_speed = *(volatile uint8_t *)0xd030;
+    /* C128 function keys normally expand their BASIC 7.0 macros (F3 is
+     * DIRECTORY+RETURN, F8 is MONITOR).  Bypass that expansion so GETIN
+     * returns the raw PETSCII function-key code to the application. */
+    saved_key_store[0] = *(volatile uint8_t *)0x033c;
+    saved_key_store[1] = *(volatile uint8_t *)0x033d;
+    *(volatile uint8_t *)0x033c = 0xb7;
+    *(volatile uint8_t *)0x033d = 0xc6;
     dispmode80col();
     *(volatile uint8_t *)0xd030 = entry_speed | 1;
     iocharmap(IOCHM_PETSCII_2);
@@ -33,6 +41,8 @@ void platform_restore_speed(uint8_t value)
 void platform_exit(void)
 {
     clrscr();
+    *(volatile uint8_t *)0x033c = saved_key_store[0];
+    *(volatile uint8_t *)0x033d = saved_key_store[1];
     platform_restore_speed(entry_speed);
 }
 #endif
