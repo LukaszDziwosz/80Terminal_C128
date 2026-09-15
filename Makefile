@@ -11,10 +11,22 @@ APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keybo
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
 TESTS := telnet xmodem phonebook keyboard ansi_terminal
-HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate
+HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init
+ULTIMATE_CONFIG := config/80terminal.cfg
+ULTIMATE_PACKAGE := build/80terminal-ultimate.zip
 
-.PHONY: all test test-oscar run clean help
-all: build/80terminal.d64
+.PHONY: all zip test test-oscar run clean help
+all: build/80terminal.d64 $(ULTIMATE_PACKAGE)
+
+build/80terminal.cfg: $(ULTIMATE_CONFIG) | build
+	cp $< $@
+
+# Firmware 3.15 Run Disk loads the matching CFG; Mount Disk alone does not.
+# The launcher, adapters and font remain together inside the disk image.
+zip: $(ULTIMATE_PACKAGE)
+
+$(ULTIMATE_PACKAGE): build/80terminal.d64 build/80terminal.cfg README.md
+	$(PYTHON) -c 'from zipfile import ZipFile, ZIP_DEFLATED; z = ZipFile("$@", "w", ZIP_DEFLATED); z.write("build/80terminal.d64", "80terminal/80terminal.d64"); z.write("build/80terminal.cfg", "80terminal/80terminal.cfg"); z.write("README.md", "80terminal/README.md"); z.close()'
 
 build:
 	mkdir -p build
@@ -38,6 +50,9 @@ build/test-%: tests/%_test.c src/core/%.c include/%.h include/telnet.h | build
 build/test-ultimate: tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/ultimate/uci.h include/network.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DULTIMATE_TEST -Iinclude -Isrc/net/ultimate tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c -o $@
 
+build/test-program-init: tests/program_init_test.c tests/stubs/conio.h src/app/program.c include/program.h include/network.h | build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DPROGRAM_TEST -Iinclude tests/program_init_test.c src/app/program.c -o $@
+
 test: $(HOST_TESTS) build/cp437font
 	@set -e; for test in $(HOST_TESTS); do ./$$test; done
 	$(PYTHON) -c 'from pathlib import Path; assert len(Path("build/cp437font").read_bytes()) == 4096; print("CP437 asset: 4096 bytes")'
@@ -49,6 +64,7 @@ test-oscar: build/wic64bridge.bin | build
 	  $(OSCAR64) -n -O2 -ea -i=include -o=build/test-$$name.prg tests/$${name}_test.c src/core/$$name.c; \
 	done
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
+	$(OSCAR64) -n -O2 -ea -dPROGRAM_TEST -i=include -o=build/test-program-init.prg tests/program_init_test.c src/app/program.c
 	$(OSCAR64) -n -O2 -ea -o=build/test-wic64-bridge.prg tests/wic64_bridge_test.c
 	$(OSCAR64) -n -O2 -ea -dPLATFORM_TEST -i=include -o=build/test-platform.prg tests/platform_test.c src/platform/c128/platform.c
 
@@ -56,10 +72,13 @@ run: all
 	$(X128) -80col -autostart build/80terminal.d64
 
 clean:
+	$(RM) build/80terminal-ultimate/*
+	-rmdir build/80terminal-ultimate
 	$(RM) build/80terminal* build/wic64bridge.bin build/cp437font build/test-*
 
 help:
-	@echo 'make             Build launcher + three adapters + CP437 font D64'
+	@echo 'make             Build D64 and Ultimate ZIP with auto-loaded UCI config'
+	@echo 'make zip         Package Ultimate D64 and matching auto-loaded CFG'
 	@echo 'make test        Run portable protocol and phonebook tests'
 	@echo 'make test-oscar  Run portable tests as Oscar64 6502 code'
 	@echo 'make run         Boot disk in VICE x128 (80 columns)'

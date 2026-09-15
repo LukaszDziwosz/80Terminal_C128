@@ -1,4 +1,9 @@
+#ifdef PROGRAM_TEST
+#include "../../tests/stubs/conio.h"
+#else
 #include <conio.h>
+#endif
+#include <string.h>
 #include "program.h"
 #include "session.h"
 #include "platform.h"
@@ -23,13 +28,33 @@ static void draw_main(const struct net_backend *backend, uint8_t ready)
     line(18, "F7  CP437 font preview");
     line(23, "F1 Retry interface     F3 Terminal     F7 Font     F8 Quit");
 }
+static uint8_t initialize(const struct net_backend *backend)
+{
+    int result;
+    char status[80];
+    line(9, "Initializing interface...");
+    result = backend->init();
+    line(11, backend->status);
+    strncpy(status, backend->status, sizeof(status) - 1);
+    status[sizeof(status) - 1] = 0;
+    if (result < 0) return 0;
+    /* NET_PENDING means the IO2 reset and network queries still need polling.
+     * Each backend enforces its own command deadlines. */
+    while (backend->state() == NET_INITIALIZING) {
+        backend->poll();
+        if (strncmp(status, backend->status, sizeof(status) - 1)) {
+            line(11, backend->status);
+            strncpy(status, backend->status, sizeof(status) - 1);
+        }
+    }
+    return backend->state() == NET_CLOSED;
+}
 /* The launcher hands ownership to this program once. Sessions return here. */
 void program_run(const struct net_backend *backend)
 {
     uint8_t key, ready;
     draw_main(backend, 0);
-    line(9, "Initializing interface...");
-    ready = backend->init() >= 0;
+    ready = initialize(backend);
     draw_main(backend, ready);
     for (;;) {
         key = getch();
@@ -37,8 +62,7 @@ void program_run(const struct net_backend *backend)
         if (key == PETSCII_F1) {
             backend->close();
             while (backend->state() == NET_CLOSING) backend->poll();
-            line(9, "Initializing interface...");
-            ready = backend->init() >= 0;
+            ready = initialize(backend);
         } else if (key == PETSCII_F3 && ready) {
             session_open(backend);
         } else if (key == PETSCII_F7) {

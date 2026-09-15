@@ -12,18 +12,8 @@ static uint8_t hw_state, identity, delay, ack_delay, never_ready, split_reply;
 static uint8_t read_mode, partial_write, write_calls, close_calls, error_reply;
 static uint8_t sent_bytes[1024];
 static uint16_t sent_size;
-static uint8_t unlock_step, unlock_supported;
+static unsigned register_writes;
 static const struct net_backend *net;
-
-void uci_test_unlock(uint16_t address, uint8_t value)
-{
-    if (unlock_step == 0) { assert(address == 0xd038 && value == 0xab); unlock_step = 1; }
-    else {
-        assert(address == 0xd036 && value == 0xcd);
-        if (unlock_supported) identity = 0xc9;
-        unlock_step = 0;
-    }
-}
 
 static void reply(uint16_t size, const char *status)
 {
@@ -48,6 +38,7 @@ uint8_t uci_test_read(uint8_t reg)
 void uci_test_write(uint8_t reg, uint8_t value)
 {
     uint16_t size;
+    ++register_writes;
     if (reg == 1) { assert(command_size < sizeof(command)); command[command_size++] = value; return; }
     assert(reg == 0);
     if (value & 4) {
@@ -123,7 +114,6 @@ static void until(enum net_state state)
 static void reset(void)
 {
     identity = 0xc9; never_ready = split_reply = read_mode = error_reply = 0;
-    unlock_step = unlock_supported = 0;
     partial_write = write_calls = close_calls = 0;
     sent_size = 0; ticks = 0;
     net = ultimate_backend();
@@ -134,6 +124,50 @@ static void connect_ok(void)
 {
     assert(net->connect("bbs.example", 2323) == NET_PENDING);
     until(NET_CONNECTED);
+}
+static void test_initialization(void)
+{
+    static const uint8_t absent[] = {0xff, 0x00, 0x48};
+    reset();
+    register_writes = 0;
+    assert(net->init() == NET_PENDING);
+    assert(register_writes == 0); /* Idle IO2 needs no abort. */
+    until(NET_CLOSED);
+    hw_state = 0x10; register_writes = 0;
+    assert(net->init() == NET_PENDING);
+    assert(register_writes == 1); /* Recover a busy interface. */
+    until(NET_CLOSED);
+    for (unsigned i = 0; i < sizeof(absent); ++i) {
+        identity = absent[i]; register_writes = 0;
+        assert(net->init() == NET_NO_DEVICE);
+        assert(net->state() == NET_FAILED);
+        assert(strstr(net->status, "Enable Ultimate Command Interface") != 0);
+        step();
+        assert(register_writes == 0);
+    }
+    /* Retry after the user enables UCI in the Ultimate configuration. */
+    identity = 0xc9;
+    assert(net->init() == NET_PENDING); until(NET_CLOSED);
+    /* An IRQ from previous software may clear identity bit 7. */
+    identity = 0x49;
+    assert(net->init() == NET_PENDING); until(NET_CLOSED);
+    never_ready = 1;
+    assert(net->init() == NET_PENDING);
+    ticks += 120; step();
+    assert(net->state() == NET_FAILED && strstr(net->status, "timed out") != 0);
+    never_ready = 0;
+    assert(net->init() == NET_PENDING); until(NET_CLOSED);
+}
+static void test_initialization_with_stopped_clock(void)
+{
+    reset(); never_ready = 1;
+    assert(net->init() == NET_PENDING);
+    for (unsigned i = 0; i < 8200 && net->state() == NET_INITIALIZING; ++i)
+        net->poll(); /* Deliberately never advance the KERNAL clock. */
+    assert(net->state() == NET_FAILED);
+    assert(strstr(net->status, "clock not advancing") != 0);
+    never_ready = 0;
+    assert(net->init() == NET_PENDING); until(NET_CLOSED);
 }
 static void test_connect_and_binary_read(void)
 {
@@ -202,8 +236,8 @@ static void test_cancel_during_connect_and_validation(void)
 }
 int main(void)
 {
-    reset(); identity = 255; unlock_supported = 1;
-    assert(net->init() == NET_PENDING); until(NET_CLOSED);
+    test_initialization();
+    test_initialization_with_stopped_clock();
     test_connect_and_binary_read();
     test_partial_write();
     test_no_data_and_close();

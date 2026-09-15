@@ -18,6 +18,7 @@ static uint8_t operation, socket_id, have_socket, closing;
 static uint8_t tx[UCI_PAYLOAD], rx[UCI_PAYLOAD], command[UCI_PAYLOAD + 3];
 static uint16_t tx_length, tx_offset, rx_length, rx_offset, tx_started;
 static char message[UCI_STATUS_SIZE];
+static uint16_t init_tick, init_stalled_polls;
 enum { RESET, IDENTIFY, ADDRESS, NONE, OPEN, READ_SOCKET, WRITE_SOCKET, CLOSE_SOCKET, CLOSE_RESET };
 
 static void set_message(const char *text)
@@ -46,13 +47,15 @@ static int initialize_inner(void)
     connection = NET_INITIALIZING;
     have_socket = closing = 0;
     tx_length = rx_length = tx_offset = rx_offset = 0;
-    if (!uci_present()) uci_enable();
+    /* Enable UCI in the Ultimate configuration before probing IO2.
+     * The VIC-space software unlock is not reliable on a C128. */
     if (!uci_present()) {
-        failure("Ultimate UCI not detected after software unlock.");
+        failure("UCI not detected. Enable Ultimate Command Interface, then press F1.");
         return NET_NO_DEVICE;
     }
-    set_message("Checking Ultimate network interface...");
+    set_message("Preparing Ultimate command interface...");
     uci_reset(); operation = RESET;
+    init_tick = uci_ticks(); init_stalled_polls = 0;
     return NET_PENDING;
 }
 static int connect_inner(const char *hostname, uint16_t port)
@@ -90,6 +93,7 @@ static void completed(void)
     if (finished == RESET || finished == CLOSE_RESET) {
         if (finished == CLOSE_RESET || closing) { start_close(); return; }
         command[0] = 3; command[1] = 1;
+        set_message("Identifying Ultimate network interface...");
         start(IDENTIFY, 2, 300);
         return;
     }
@@ -113,6 +117,7 @@ static void completed(void)
         case IDENTIFY:
             if (!uci_reply_length) { failure("Empty network identification."); return; }
             command[0] = 3; command[1] = 5; command[2] = 0;
+            set_message("Reading Ultimate IP address...");
             start(ADDRESS, 3, 300);
             return;
         case ADDRESS:
@@ -158,9 +163,29 @@ static void poll_inner(void)
 {
     enum uci_result result;
     uint16_t n;
+    /* The old cc65 implementation bounded its waits with a loop counter.
+     * Keep an independent limit during initialization: the KERNAL jiffy
+     * clock may stop, in which case the UCI deadlines alone cannot expire. */
+    if (connection == NET_INITIALIZING) {
+        n = uci_ticks();
+        if (n != init_tick) {
+            init_tick = n; init_stalled_polls = 0;
+        } else if (++init_stalled_polls == 8192) {
+            failure(operation == RESET ? "UCI reset stalled: C128 clock not advancing." :
+                    operation == IDENTIFY ? "UCI IDENTIFY stalled: C128 clock not advancing." :
+                    "UCI IP query stalled: C128 clock not advancing.");
+            return;
+        }
+    }
     if (operation != NONE) {
         result = uci_poll();
-        if (result == UCI_TIMEOUT) { failure("Ultimate command timed out."); return; }
+        if (result == UCI_TIMEOUT) {
+            failure(operation == RESET ? "Ultimate interface reset timed out." :
+                    operation == IDENTIFY ? "Ultimate network IDENTIFY timed out." :
+                    operation == ADDRESS ? "Ultimate IP address query timed out." :
+                    "Ultimate command timed out.");
+            return;
+        }
         if (result == UCI_ERROR) { failure("Ultimate protocol error or oversized reply."); return; }
         if (result == UCI_DONE) completed();
         return;

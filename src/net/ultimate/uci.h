@@ -10,7 +10,6 @@ extern uint8_t uci_reply[UCI_REPLY_SIZE];
 extern uint16_t uci_reply_length;
 extern char uci_status[UCI_STATUS_SIZE];
 uint8_t uci_present(void);
-void uci_enable(void);
 void uci_reset(void);
 uint8_t uci_start(const uint8_t *command, uint16_t size, uint16_t timeout);
 enum uci_result uci_poll(void);
@@ -21,6 +20,5 @@ uint8_t uci_status_code(void);
 uint8_t uci_test_read(uint8_t reg);
 void uci_test_write(uint8_t reg, uint8_t value);
 uint16_t uci_test_ticks(void);
-void uci_test_unlock(uint16_t address, uint8_t value);
 #endif
 #endif

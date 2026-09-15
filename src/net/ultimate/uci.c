@@ -34,21 +34,11 @@ uint8_t uci_present(void)
     /* Bit 7 may be cleared by a 3.15 UCI IRQ left by previous software. */
     return (READ(1) & 0x7f) == 0x49;
 }
-void uci_enable(void)
-{
-    /* Firmware 3.15 software unlock (UBoot64-v2, confirmed by Gideon).
-     * These are $D038 and $D036, not the C128 speed register $D030. */
-#ifdef ULTIMATE_TEST
-    uci_test_unlock(0xd038, 0xab);
-    uci_test_unlock(0xd036, 0xcd);
-#else
-    *(volatile uint8_t *)0xd038 = 0xab;
-    *(volatile uint8_t *)0xd036 = 0xcd;
-#endif
-}
 void uci_reset(void)
 {
-    WRITE(0, 0x0c); /* ABORT plus CLR_ERR, never read/modify/write status. */
+    /* Like the cc65 startup, leave an idle interface alone. Recover a
+     * pending transaction or error with ABORT plus CLR_ERR. */
+    if (READ(0) & 0x3f) WRITE(0, 0x0c);
     stage = RESETTING;
     result = UCI_PENDING;
     started = uci_ticks(); deadline = 120;
