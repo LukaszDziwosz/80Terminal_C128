@@ -14,10 +14,10 @@ still to be ported.
 ## Current baseline
 
 WiC64 detection and fast TCP reception are verified on real C128 hardware with
-WiC64 firmware 2.1.0. The ANSI/VT100 path uses the C128 VDC directly, loads
+WiC64 firmware 2.1.0. The ANSI/VT100 (not yet separated) uses the C128 VDC directly, loads
 the CP437 font, and supports cursor motion, clearing, scrolling, colors,
 terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests;
-real BBS interaction remains the next hardware check. Ultimate detection remains unverified on the user's hardware;
+real BBS interaction remains the next hardware check. Ultimate detection veified needs more tests,
 RR-Net is a scaffold. Shared Telnet, XMODEM and phonebook cores have tests.
 
 The PETSCII terminal keeps its native input mapping. RUN/STOP shows counts of
