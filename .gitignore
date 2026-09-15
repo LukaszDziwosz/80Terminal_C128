@@ -1,5 +1,6 @@
 /.tools/
-/build/
+/build/*
+!/build/terminal80.d64
 /References/
 /third_party/wic64/*
 !/third_party/wic64/wic64.asm

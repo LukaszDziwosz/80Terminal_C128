@@ -25,23 +25,18 @@ keys read and TCP bytes accepted, including Telnet negotiation.
 
 ## Ultimate initialization
 
-`make` (or `make zip`) creates `build/80terminal-ultimate.zip`. Extract it to
-Ultimate SD/USB storage, keeping `80terminal.d64` and `80terminal.cfg` together.
-The CFG enables **Command Interface** under **C64 and Cartridge Settings**.
-It is optional if that setting is already enabled.
-
-The Ultimate firmware's **Run Disk** action loads the matching external CFG.
-**Mount Disk** alone does not call that configuration loader. For the C128
-workflow of mounting the D64 and loading from BASIC, first apply the CFG through
-Ultimate's configuration loader, or enable Command Interface in its menu.
-Merely placing the two files together does not guarantee the CFG is applied.
+`make` creates the distributable disk image at `build/terminal80.d64`.
+For the C128 workflow, enable **Command Interface** under **C64 and Cartridge
+Settings** in the Ultimate menu before mounting the disk. Ultimate's **Run
+Disk** action launches C64 mode, so its per-title CFG mechanism is not used by
+this C128 program.
 See the firmware's
 [Run Disk implementation](https://github.com/GideonZ/1541ultimate/blob/master/software/filetypes/filetype_d64.cc)
 and [mount implementation](https://github.com/GideonZ/1541ultimate/blob/master/software/drive/c1541.cc).
 
 80Terminal is a disk-loaded C128 program. The launcher, adapters and font stay
-inside the D64. The CFG is read by Ultimate itself and contains no U64 turbo
-settings. Its configuration is separate from the program's IO2 network check.
+inside the D64. Its configuration is separate from the program's IO2 network
+check.
 
 80Terminal detects UCI through IO2 at `$DF1D`, then resets the interface and
 checks network identification and the IP address. It does not attempt the
@@ -58,7 +53,7 @@ in `tools/oscar64-revision.txt`.
 make all test test-oscar
 ```
 
-Boot `build/80terminal.d64` in C128 mode. Keep the adapter files on the disk.
+Boot `build/terminal80.d64` in C128 mode. Keep the adapter files on the disk.
 `make run` starts VICE in 80-column mode. CPU tests do not emulate WiC64 hardware.
 
 The official WiC64 assembly library is vendored under `third_party/wic64`, with

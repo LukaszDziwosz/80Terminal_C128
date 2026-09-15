@@ -12,21 +12,10 @@ APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keybo
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
 TESTS := telnet xmodem phonebook keyboard ansi_terminal
 HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init
-ULTIMATE_CONFIG := config/80terminal.cfg
-ULTIMATE_PACKAGE := build/80terminal-ultimate.zip
+DISK_IMAGE := build/terminal80.d64
 
-.PHONY: all zip test test-oscar run clean help
-all: build/80terminal.d64 $(ULTIMATE_PACKAGE)
-
-build/80terminal.cfg: $(ULTIMATE_CONFIG) | build
-	cp $< $@
-
-# Firmware 3.15 Run Disk loads the matching CFG; Mount Disk alone does not.
-# The launcher, adapters and font remain together inside the disk image.
-zip: $(ULTIMATE_PACKAGE)
-
-$(ULTIMATE_PACKAGE): build/80terminal.d64 build/80terminal.cfg README.md
-	$(PYTHON) -c 'from zipfile import ZipFile, ZIP_DEFLATED; z = ZipFile("$@", "w", ZIP_DEFLATED); z.write("build/80terminal.d64", "80terminal/80terminal.d64"); z.write("build/80terminal.cfg", "80terminal/80terminal.cfg"); z.write("README.md", "80terminal/README.md"); z.close()'
+.PHONY: all test test-oscar run clean help
+all: $(DISK_IMAGE)
 
 build:
 	mkdir -p build
@@ -39,7 +28,7 @@ build/cp437font: assets/cp437-8x8.hex tools/build_vdc_font.py | build
 build/wic64bridge.bin: $(WIC64_SOURCES) | build
 	acme -I third_party/wic64 -f plain -o $@ src/net/wic64/bridge.asm
 
-build/80terminal.d64: $(SOURCES) $(WIC64_SOURCES) Makefile build/cp437font build/wic64bridge.bin | build
+$(DISK_IMAGE): $(SOURCES) $(WIC64_SOURCES) Makefile build/cp437font build/wic64bridge.bin | build
 	$(OSCAR64) $(OSCARFLAGS) -i=include -o=build/80terminal.prg -d64=build/80terminal-tmp.d64 $(APP_SOURCES)
 	$(C1541) -attach build/80terminal-tmp.d64 -write build/cp437font cp437font,s
 	mv build/80terminal-tmp.d64 $@
@@ -69,16 +58,13 @@ test-oscar: build/wic64bridge.bin | build
 	$(OSCAR64) -n -O2 -ea -dPLATFORM_TEST -i=include -o=build/test-platform.prg tests/platform_test.c src/platform/c128/platform.c
 
 run: all
-	$(X128) -80col -autostart build/80terminal.d64
+	$(X128) -80col -autostart $(DISK_IMAGE)
 
 clean:
-	$(RM) build/80terminal-ultimate/*
-	-rmdir build/80terminal-ultimate
-	$(RM) build/80terminal* build/wic64bridge.bin build/cp437font build/test-*
+	find build -mindepth 1 -maxdepth 1 ! -name terminal80.d64 -exec rm -rf -- {} +
 
 help:
-	@echo 'make             Build D64 and Ultimate ZIP with auto-loaded UCI config'
-	@echo 'make zip         Package Ultimate D64 and matching auto-loaded CFG'
+	@echo 'make             Build the C128 D64 disk image'
 	@echo 'make test        Run portable protocol and phonebook tests'
 	@echo 'make test-oscar  Run portable tests as Oscar64 6502 code'
 	@echo 'make run         Boot disk in VICE x128 (80 columns)'
