@@ -7,11 +7,11 @@ OSCARFLAGS ?= -tm=c128e -n -O2 -g -dNOFLOAT -dNOLONG
 SOURCES := $(shell find src include -type f \( -name '*.c' -o -name '*.h' \))
 APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keyboard.c src/core/ansi_terminal.c \
                src/app/program.c src/platform/c128/platform.c src/platform/c128/vdc_screen.c \
-               src/net/unimplemented.c src/net/rrnet/backend.c \
+               src/net/unimplemented.c src/net/rrnet/backend.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c \
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
 TESTS := telnet xmodem phonebook keyboard ansi_terminal
-HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init
+HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init build/test-rrnet-ip65-hw
 DISK_IMAGE := build/terminal80.d64
 
 .PHONY: all test test-oscar run clean help
@@ -42,6 +42,9 @@ build/test-ultimate: tests/ultimate_test.c src/net/ultimate/backend.c src/net/ul
 build/test-program-init: tests/program_init_test.c tests/stubs/conio.h src/app/program.c include/program.h include/network.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DPROGRAM_TEST -Iinclude tests/program_init_test.c src/app/program.c -o $@
 
+build/test-rrnet-ip65-hw: tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_rrnet.h src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_ethernet.h src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_arp.h | build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Isrc/net/rrnet $< src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c -o $@
+
 test: $(HOST_TESTS) build/cp437font
 	@set -e; for test in $(HOST_TESTS); do ./$$test; done
 	$(PYTHON) -c 'from pathlib import Path; assert len(Path("build/cp437font").read_bytes()) == 4096; print("CP437 asset: 4096 bytes")'
@@ -54,6 +57,7 @@ test-oscar: build/wic64bridge.bin | build
 	done
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
 	$(OSCAR64) -n -O2 -ea -dPROGRAM_TEST -i=include -o=build/test-program-init.prg tests/program_init_test.c src/app/program.c
+	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=src/net/rrnet -o=build/test-rrnet-ip65-hw.prg tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c
 	$(OSCAR64) -n -O2 -ea -o=build/test-wic64-bridge.prg tests/wic64_bridge_test.c
 	$(OSCAR64) -n -O2 -ea -dPLATFORM_TEST -i=include -o=build/test-platform.prg tests/platform_test.c src/platform/c128/platform.c
 
