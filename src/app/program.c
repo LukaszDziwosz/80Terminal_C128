@@ -53,10 +53,24 @@ static uint8_t initialize(const struct net_backend *backend)
 void program_run(const struct net_backend *backend)
 {
     uint8_t key, ready;
+    char status[74];
     draw_main(backend, 0);
     ready = initialize(backend);
     draw_main(backend, ready);
+    strncpy(status, backend->status, sizeof(status) - 1);
+    status[sizeof(status) - 1] = 0;
     for (;;) {
+        /* Keep DHCP lease timers and ARP alive while waiting at the menu. */
+        backend->poll();
+        if (ready != (backend->state() == NET_CLOSED)) {
+            ready = backend->state() == NET_CLOSED;
+            draw_main(backend, ready);
+        }
+        if (strncmp(status, backend->status, sizeof(status) - 1)) {
+            line(11, backend->status);
+            strncpy(status, backend->status, sizeof(status) - 1);
+        }
+        if (!kbhit()) continue;
         key = getch();
         if (key == PETSCII_F8 || key == 'q' || key == 'Q') break;
         if (key == PETSCII_F1) {
@@ -66,7 +80,7 @@ void program_run(const struct net_backend *backend)
         } else if (key == PETSCII_F3 && ready) {
             session_open(backend);
         } else if (key == PETSCII_F7) {
-            screen_font_preview(platform_device());
+            screen_font_preview(platform_device(), backend->poll);
         } else continue;
         draw_main(backend, ready);
     }

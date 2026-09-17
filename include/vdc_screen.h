@@ -12,5 +12,5 @@ void screen_set_cursor(uint16_t address, uint8_t visible);
  * used until screen_restore_font() after successful loading. */
 uint8_t screen_load_cp437(uint8_t device);
 void screen_restore_font(void);
-void screen_font_preview(uint8_t device);
+void screen_font_preview(uint8_t device, void (*idle)(void));
 #endif

@@ -10,6 +10,7 @@
 #ifndef RRNET_IP65_TEST
 #pragma code(rrcode)
 #pragma data(rrdata)
+#pragma bss(rrbss)
 #endif
 
 uint8_t rrnet_ip65_eth_in[RRNET_IP65_FRAME_CAPACITY];
@@ -83,4 +84,5 @@ uint8_t rrnet_ip65_eth_send(void)
 #ifndef RRNET_IP65_TEST
 #pragma code(code)
 #pragma data(data)
+#pragma bss(bss)
 #endif

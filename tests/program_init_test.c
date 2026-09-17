@@ -4,7 +4,7 @@
 #include "stubs/conio.h"
 #include "program.h"
 
-static int state, calls, polls, sessions, key_index, fail_first, immediate;
+static int state, calls, polls, sessions, key_index, fail_first, immediate, idle_polls;
 static unsigned row, col;
 static char screen[25][81];
 static const unsigned char keys[] = {PETSCII_F3, PETSCII_F1, PETSCII_F3, PETSCII_F8};
@@ -19,7 +19,8 @@ char getch(void)
     return (char)keys[key_index++];
 }
 uint8_t platform_device(void) { return 8; }
-void screen_font_preview(uint8_t device) { (void)device; }
+char kbhit(void) { return idle_polls > 0; }
+void screen_font_preview(uint8_t device, void (*idle)(void)) { (void)device; (void)idle; }
 void session_open(const struct net_backend *backend)
 {
     assert(backend->state() == NET_CLOSED);
@@ -33,7 +34,7 @@ static int initialize(void)
 }
 static void poll(void)
 {
-    assert(state == NET_INITIALIZING);
+    if (state != NET_INITIALIZING) { ++idle_polls; return; }
     if (++polls == 3) state = fail_first && calls == 1 ? NET_FAILED : NET_CLOSED;
 }
 static int get_state(void) { return state; }
@@ -45,10 +46,11 @@ static struct net_backend backend = {
 int main(void)
 {
     for (int mode = 0; mode < 3; ++mode) {
-        calls = polls = sessions = key_index = 0;
+        calls = polls = sessions = key_index = idle_polls = 0;
         fail_first = mode == 1; immediate = mode == 2;
         program_run(&backend);
         assert(calls == 2 && sessions == (fail_first ? 1 : 2));
+        assert(idle_polls >= 4);
     }
     puts("Main-screen initialization and retry tests passed");
     return 0;

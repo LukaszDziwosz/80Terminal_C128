@@ -26,6 +26,7 @@
 #ifndef RRNET_IP65_TEST
 #pragma code(rrcode)
 #pragma data(rrdata)
+#pragma bss(rrbss)
 #define READ(address) (*(volatile uint8_t *)(address))
 #define WRITE(address, value) (*(volatile uint8_t *)(address) = (value))
 #else
@@ -63,11 +64,52 @@ static void select_page(uint16_t page)
     WRITE(RR_PACKETPP_LO, (uint8_t)page);
     WRITE(RR_PACKETPP_HI, (uint8_t)(page >> 8));
 }
+#if defined(__OSCAR64C__) && !defined(RRNET_IP65_TEST)
+__noinline
+#endif
 static void write_page(uint16_t page, uint16_t value)
 {
+#if defined(__OSCAR64C__) && !defined(RRNET_IP65_TEST)
+    /* Oscar -O2 moved C volatile data writes before the page selection in
+     * the MAC loop. Keep this hardware transaction indivisible. */
+    __asm volatile {
+        lda page
+        sta $de02
+        lda page + 1
+        sta $de03
+        lda value
+        sta $de04
+        lda value + 1
+        sta $de05
+    }
+#else
     select_page(page);
     WRITE(RR_PPDATA_LO, (uint8_t)value);
     WRITE(RR_PPDATA_HI, (uint8_t)(value >> 8));
+#endif
+}
+#if defined(__OSCAR64C__) && !defined(RRNET_IP65_TEST)
+__noinline
+#endif
+static uint16_t receive_length(void)
+{
+#if defined(__OSCAR64C__) && !defined(RRNET_IP65_TEST)
+    /* Both discarded status reads are required FIFO operations. Oscar -O2
+     * eliminated the C (void) volatile reads and reordered the length pair. */
+    return __asm volatile {
+        lda $de09
+        lda $de08
+        lda $de09
+        sta accu + 1
+        lda $de08
+        sta accu
+    };
+#else
+    uint8_t high, low;
+    (void)READ(RR_RXTX_HI); (void)READ(RR_RXTX_LO);
+    high = READ(RR_RXTX_HI); low = READ(RR_RXTX_LO);
+    return low | ((uint16_t)high << 8);
+#endif
 }
 static uint8_t chip_present(void)
 {
@@ -131,8 +173,8 @@ uint8_t rrnet_ip65_init(void)
      * bound the wait so the terminal can report a missing/faulty adapter. */
     attempts = 0;
     reset_done = 0;
-    select_page(PP_SELF_CTL);
     do {
+        select_page(PP_SELF_CTL);
         if (!(READ(RR_PPDATA_LO) & 0x40)) {
             reset_done = 1;
             break;
@@ -154,14 +196,11 @@ uint8_t rrnet_ip65_init(void)
 uint16_t rrnet_ip65_receive(uint8_t *buffer, uint16_t capacity)
 {
     uint16_t length, wire_length, i;
-    uint8_t high, low;
 
     select_page(PP_RX_EVENT);
     if (!(READ(RR_PPDATA_HI) & 0x0d)) return 0;
     /* RR-Net's byte ports sample receive status and length high, then low. */
-    (void)READ(RR_RXTX_HI); (void)READ(RR_RXTX_LO);
-    high = READ(RR_RXTX_HI); low = READ(RR_RXTX_LO);
-    length = low | ((uint16_t)high << 8);
+    length = receive_length();
     wire_length = (length + 1U) & (uint16_t)~1U;
     if (!length || wire_length > capacity || wire_length > RRNET_IP65_FRAME_CAPACITY) {
         skip_frame();
@@ -205,4 +244,5 @@ void rrnet_ip65_shutdown(void) { }
 #ifndef RRNET_IP65_TEST
 #pragma code(code)
 #pragma data(data)
+#pragma bss(bss)
 #endif

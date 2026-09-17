@@ -7,11 +7,12 @@ OSCARFLAGS ?= -tm=c128e -n -O2 -g -dNOFLOAT -dNOLONG
 SOURCES := $(shell find src include -type f \( -name '*.c' -o -name '*.h' \))
 APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keyboard.c src/core/ansi_terminal.c \
                src/app/program.c src/platform/c128/platform.c src/platform/c128/vdc_screen.c \
-               src/net/unimplemented.c src/net/rrnet/backend.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c \
+               src/net/unimplemented.c src/net/rrnet/backend.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_dhcp.c \
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
 TESTS := telnet xmodem phonebook keyboard ansi_terminal
-HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init build/test-rrnet-ip65-hw
+HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init build/test-rrnet-ip65-hw build/test-rrnet-dhcp
+DHCP_TEST_SOURCES := tests/rrnet_dhcp_test.c src/net/rrnet/ip65_dhcp.c src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/backend.c src/net/unimplemented.c
 DISK_IMAGE := build/terminal80.d64
 
 .PHONY: all test test-oscar run clean help
@@ -28,8 +29,9 @@ build/cp437font: assets/cp437-8x8.hex tools/build_vdc_font.py | build
 build/wic64bridge.bin: $(WIC64_SOURCES) | build
 	acme -I third_party/wic64 -f plain -o $@ src/net/wic64/bridge.asm
 
-$(DISK_IMAGE): $(SOURCES) $(WIC64_SOURCES) Makefile build/cp437font build/wic64bridge.bin | build
+$(DISK_IMAGE): $(SOURCES) $(WIC64_SOURCES) Makefile tools/check_rrnet_codegen.py build/cp437font build/wic64bridge.bin | build
 	$(OSCAR64) $(OSCARFLAGS) -i=include -o=build/80terminal.prg -d64=build/80terminal-tmp.d64 $(APP_SOURCES)
+	$(PYTHON) tools/check_rrnet_codegen.py build/80terminal.asm
 	$(C1541) -attach build/80terminal-tmp.d64 -write build/cp437font cp437font,s
 	mv build/80terminal-tmp.d64 $@
 
@@ -45,6 +47,9 @@ build/test-program-init: tests/program_init_test.c tests/stubs/conio.h src/app/p
 build/test-rrnet-ip65-hw: tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_rrnet.h src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_ethernet.h src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_arp.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Isrc/net/rrnet $< src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c -o $@
 
+build/test-rrnet-dhcp: $(DHCP_TEST_SOURCES) $(wildcard src/net/rrnet/*.h) include/network.h include/platform.h | build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Iinclude -Isrc/net/rrnet $(DHCP_TEST_SOURCES) -o $@
+
 test: $(HOST_TESTS) build/cp437font
 	@set -e; for test in $(HOST_TESTS); do ./$$test; done
 	$(PYTHON) -c 'from pathlib import Path; assert len(Path("build/cp437font").read_bytes()) == 4096; print("CP437 asset: 4096 bytes")'
@@ -58,6 +63,7 @@ test-oscar: build/wic64bridge.bin | build
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
 	$(OSCAR64) -n -O2 -ea -dPROGRAM_TEST -i=include -o=build/test-program-init.prg tests/program_init_test.c src/app/program.c
 	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=src/net/rrnet -o=build/test-rrnet-ip65-hw.prg tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c
+	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=include -i=src/net/rrnet -o=build/test-rrnet-dhcp.prg $(DHCP_TEST_SOURCES)
 	$(OSCAR64) -n -O2 -ea -o=build/test-wic64-bridge.prg tests/wic64_bridge_test.c
 	$(OSCAR64) -n -O2 -ea -dPLATFORM_TEST -i=include -o=build/test-platform.prg tests/platform_test.c src/platform/c128/platform.c
 

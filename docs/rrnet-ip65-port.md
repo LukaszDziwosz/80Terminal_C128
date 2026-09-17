@@ -29,6 +29,21 @@ in `src/net/rrnet/ip65_rrnet.c`.
 
 ## Target backend contract
 
+Hardware reference confirmed by the user with Kipperterm 128:
+
+- RR-Net detection now succeeds in 80Terminal with the MAC fallback.
+- Kipperterm reports MAC `00:80:10:d5:64:6e`, IP `192.168.68.61`,
+  netmask `255.255.252.0`, gateway and DHCP server `192.168.68.1`.
+- Kipperterm displays DNS `192.168.0.1`; the user requires DNS `1.1.1.1`.
+  Keep DHCP for address, netmask and gateway, and apply the DNS override after
+  DHCP configuration, including any renewal. Do not hardcode the photographed
+  IP address: it is a reference lease from another application.
+- These values are reference data. DHCP now acquires the live network
+  configuration; DNS lookup is not implemented yet.
+
+Kipperterm's `client/inc/config_menu.i` maps F4 to DNS editing. From its main
+menu use F7, F4, enter `1.1.1.1`, Return, then F7 to return to the main menu.
+
 The result must implement the existing `struct net_backend` contract:
 
 ```text
@@ -42,6 +57,41 @@ close()      send FIN / finish teardown → NET_CLOSED
 
 `poll()` must run at 1 MHz around RR-Net accesses. It must return promptly so
 the terminal can continue accepting keyboard input and rendering VDC updates.
+
+## DHCP implementation and verification
+
+`ip65_dhcp.c` implements DISCOVER/OFFER/REQUEST/ACK, bounded acquisition retries,
+NAK handling, T1 renewal via unicast, T2 broadcast rebinding, and removal of an
+expired address before rediscovery. Infinite leases are supported. The server's
+address, subnet mask, first router and lease lifetime are retained; DNS is set
+to `1.1.1.1` after every ACK. Configuration is not applied on an OFFER alone.
+The packet formats follow [RFC 2131](https://www.rfc-editor.org/rfc/rfc2131)
+and [RFC 2132](https://www.rfc-editor.org/rfc/rfc2132).
+
+The client validates IPv4 lengths/checksums, nonzero UDP checksums, transaction
+IDs, client MAC, server selection and option bounds, including option overload.
+It rejects fragmented IPv4 packets. Acquisition stops after 60 seconds; the
+backend separately detects a stalled C128 clock. Menus and input waits poll the
+backend so leases can renew. General UDP sockets, DNS lookup, TCP, DHCP RELEASE
+and address-conflict probing/DECLINE are not implemented.
+
+The first hardware DHCP test timed out. Inspection of the actual Oscar -O2
+output showed that C volatile accesses were miscompiled: MAC data was written
+before selecting its packet-page register, and the discarded receive-status
+FIFO reads were removed. `write_page()` and `receive_length()` now use explicit
+6502 assembly. `tools/check_rrnet_codegen.py` checks the emitted instruction
+order as part of every disk build. Reset polling also reselects SelfCTL each
+iteration, as the original cc65 driver does.
+
+`tests/rrnet_dhcp_test.c` covers acquisition, rejection of malformed/unrelated
+replies, option overload, retry/clock wrap, NAK, expiry, renewal/rebinding,
+infinite leases, DNS override and backend speed restoration. It runs on the
+host and in Oscar's 6502 emulator. Packet tests use simulated I/O; hardware
+confirmation of DHCP after the assembly fixes is still required. A timeout
+now reports sent packets, received Ethernet frames and candidate DHCP replies.
+
+The two 1518-byte Ethernet buffers and other RR-Net working data are allocated
+in the overlay's `rrbss` section, with explicit initialization before use.
 
 ## Phased implementation
 
@@ -58,12 +108,12 @@ the terminal can continue accepting keyboard input and rendering VDC updates.
      RR-Net overlay has room for these plus protocol state.
    - Port or reimplement Ethernet framing, ARP cache/replies, IPv4 checksums,
      and packet dispatch.
-   - `ip65_arp.c` now covers ARP cache updates, local/gateway routing, ARP
-     requests, and replies. Add IPv4 frame parsing and checksums before
-     hardware testing.
+   - `ip65_arp.c` covers ARP cache updates, local/gateway routing, ARP requests
+     and replies. DHCP has its own bounded IPv4/UDP handling; general packet
+     dispatch remains to be added for DNS and TCP.
 
 3. **Configuration**
-   - Add DHCP as the default initialization path, with a bounded retry policy.
+   - DHCP is now the default initialization path, with bounded retries.
    - If DHCP fails, report the failure rather than silently inventing a static
      address. Static configuration can be added later as an explicit setting.
    - Verify on hardware: assigned address, gateway, and DNS server.

@@ -3,13 +3,16 @@
 /* Initial budget, to be revisited after the RR-Net stack spike.
  * Oscar overlay bank numbers are disk overlays, NOT C128 RAM banks. */
 #pragma stacksize(512)
+/* All application buffers are static; do not reserve an unused 1 KB heap. */
+#pragma heapsize(0)
 #pragma region(main, 0x1c80, 0x6000, , , {code, data, bss, heap})
 /* $6000-$7fff: complete 8 KB WiC64 TCP response, outside heap and stack. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})
 #pragma overlay(netrr, 1)
 #pragma section(rrcode, 0)
 #pragma section(rrdata, 0)
-#pragma region(rrslot, 0x9000, 0xc000, , 1, {rrcode, rrdata})
+#pragma section(rrbss, 0, , , bss)
+#pragma region(rrslot, 0x9000, 0xc000, , 1, {rrcode, rrdata, rrbss})
 #pragma overlay(netult, 2)
 #pragma section(ultcode, 0)
 #pragma section(ultdata, 0)

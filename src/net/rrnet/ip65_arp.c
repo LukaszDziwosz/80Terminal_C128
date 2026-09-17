@@ -12,6 +12,7 @@
 #ifndef RRNET_IP65_TEST
 #pragma code(rrcode)
 #pragma data(rrdata)
+#pragma bss(rrbss)
 #endif
 
 #define ARP_FRAME_LENGTH 42U
@@ -170,4 +171,5 @@ void rrnet_ip65_arp_process(void)
 #ifndef RRNET_IP65_TEST
 #pragma code(code)
 #pragma data(data)
+#pragma bss(bss)
 #endif

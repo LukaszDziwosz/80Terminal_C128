@@ -18,7 +18,8 @@ WiC64 firmware 2.1.0. The ANSI/VT100 (not yet separated) uses the C128 VDC direc
 the CP437 font, and supports cursor motion, clearing, scrolling, colors,
 terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests;
 real BBS interaction remains the next hardware check. Ultimate detection veified needs more tests,
-RR-Net is a scaffold. Shared Telnet, XMODEM and phonebook cores have tests.
+RR-Net detects the CS8900A and implements DHCP, including lease renewal;
+TCP and DNS lookup are still pending. Shared Telnet, XMODEM and phonebook cores have tests.
 
 The PETSCII terminal keeps its native input mapping. RUN/STOP shows counts of
 keys read and TCP bytes accepted, including Telnet negotiation.
@@ -44,6 +45,13 @@ VIC-space `$D038`/`$D036` software unlock on the C128. If detection fails,
 enable the interface in the Ultimate menu and press **F1** to retry.
 
 ## Build
+
+RR-Net initialization requests an address, subnet mask and gateway via DHCP.
+DNS is overridden to `1.1.1.1` after each accepted lease. The status line shows
+the assigned IP, or reports a timeout after 60 seconds with sent, received
+Ethernet-frame and DHCP-reply counts. F1 retries. Lease timers run during menu,
+font preview and input waits. DHCP has host and 6502 packet tests; the latest
+hardware I/O fixes still need confirmation on a real adapter.
 
 Install Oscar64, ACME and VICE's `c1541`. `make` uses `.tools/oscar64/bin/oscar64`
 if available, or `oscar64` from PATH. The pinned compiler revision is recorded

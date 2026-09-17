@@ -25,13 +25,19 @@ static uint8_t cancelled(uint8_t key)
 {
     return key == PETSCII_STOP || key == PETSCII_F7 || key == 27;
 }
-static uint8_t edit(uint8_t row, char *text, uint8_t capacity, uint8_t digits)
+static uint8_t wait_key(const struct net_backend *backend)
+{
+    while (!kbhit()) backend->poll();
+    return getch();
+}
+static uint8_t edit(const struct net_backend *backend, uint8_t row,
+                    char *text, uint8_t capacity, uint8_t digits)
 {
     uint8_t length = (uint8_t)strlen(text), key;
     for (;;) {
         line(row, text);
         gotoxy((uint8_t)(3 + length), row); putch('_');
-        key = getch();
+        key = wait_key(backend);
         if (cancelled(key)) return 0;
         if (key == 10 || key == 13) return length != 0;
         if (key == PETSCII_HOME) { length = 0; text[0] = 0; }
@@ -151,7 +157,7 @@ static void terminal(const struct net_backend *backend)
     sprintf(counters, "Keys read: %u   TCP bytes sent (incl. Telnet): %u", key_count, tx_count);
     line(7, counters);
     line(20, "Press any key to return to the main screen.");
-    getch();
+    wait_key(backend);
 }
 void session_open(const struct net_backend *backend)
 {
@@ -176,17 +182,17 @@ void session_open(const struct net_backend *backend)
         line(4, "Hostname or IPv4 address:");
         line(8, "Port (1-65535):");
         line(18, "RETURN accepts each field. F7 cancels.");
-        if (!edit(5, hostname, 64, 0) || !edit(9, port_text, 5, 1)) {
+        if (!edit(backend, 5, hostname, 64, 0) || !edit(backend, 9, port_text, 5, 1)) {
             shutdown(backend); return;
         }
         port = 0;
         for (i = 0; port_text[i]; ++i) port = port * 10 + port_text[i] - '0';
         if (port > 0 && port <= 65535) break;
-        line(14, "Invalid port. Press a key to try again."); getch();
+        line(14, "Invalid port. Press a key to try again."); wait_key(backend);
     }
     line(12, "1  ANSI/VT100 80 columns         2  PETSCII 80/Telnet");
     line(14, "ANSI sends terminal identification, cursor and status replies.");
-    do { key = getch(); if (cancelled(key)) { shutdown(backend); return; } }
+    do { key = wait_key(backend); if (cancelled(key)) { shutdown(backend); return; } }
     while (key != '1' && key != '2');
     ascii_mode = key == '1';
     /* Some transports (WiC64) perform TCP open as one firmware request.
@@ -199,7 +205,7 @@ void session_open(const struct net_backend *backend)
     if (backend->connect(hostname, (uint16_t)port) < 0) {
         line(10, backend->status);
         line(20, "Press any key to return to the main screen.");
-        getch(); shutdown(backend); return;
+        wait_key(backend); shutdown(backend); return;
     }
     clrscr();
     line(5, backend->status);

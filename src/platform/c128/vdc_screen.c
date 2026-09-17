@@ -127,7 +127,7 @@ uint8_t screen_load_cp437(uint8_t device)
     else screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
     return ok;
 }
-void screen_font_preview(uint8_t device)
+void screen_font_preview(uint8_t device, void (*idle)(void))
 {
     uint16_t display, attributes, i;
     uint8_t row;
@@ -135,6 +135,7 @@ void screen_font_preview(uint8_t device)
     if (!screen_load_cp437(device)) {
         for (const char *s = "Could not load cp437font. Press a key."; *s; ++s)
             putch(*s);
+        while (!kbhit()) idle();
         getch();
         return;
     }
@@ -148,6 +149,7 @@ void screen_font_preview(uint8_t device)
     for (i = 0; i < 256; ++i) font_chunk[i] = 0x0f;
     for (row = 0; row < 25; ++row)
         screen_write_run(attributes + (uint16_t)row * 80, font_chunk, 80);
+    while (!kbhit()) idle();
     getch();
     screen_restore_font();
 }
