@@ -295,7 +295,7 @@ static void test_backend(void)
     assert(backend->state() == NET_CLOSED && speed == 1);
     assert(strstr(backend->status, "192.168.68.61") != NULL);
     assert(strstr(backend->status, "1.1.1.1") != NULL);
-    assert(backend->connect("example", 23) == NET_NOT_IMPLEMENTED);
+    assert(backend->connect("example", 23) == NET_PENDING);
     backend->close();
     assert(backend->init() == NET_PENDING);
     now += 3600; backend->poll();

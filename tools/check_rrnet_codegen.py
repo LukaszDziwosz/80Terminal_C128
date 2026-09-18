@@ -17,3 +17,12 @@ for function, expected in (
     if accesses != expected:
         raise SystemExit(f"RR-Net: incorrect {function} I/O sequence: {accesses}")
 print("RR-Net generated code: register selection and four FIFO header reads verified")
+
+# An overlay PRG is contiguous, including gaps between its regions. Buffer
+# BSS below $8000 must not pull the disk overlay across the active stack.
+overlay = Path(sys.argv[1]).with_name("netrr.prg").read_bytes()
+load = int.from_bytes(overlay[:2], "little")
+end = load + len(overlay) - 2
+if load < 0x8200 or end > 0xc000:
+    raise SystemExit(f"RR-Net overlay overlaps resident memory: ${load:04x}-${end:04x}")
+print(f"RR-Net overlay: ${load:04x}-${end:04x}, clear of runtime stack")

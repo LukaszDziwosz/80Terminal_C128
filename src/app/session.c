@@ -27,7 +27,7 @@ static uint8_t cancelled(uint8_t key)
 }
 static uint8_t wait_key(const struct net_backend *backend)
 {
-    while (!kbhit()) backend->poll();
+    while (!platform_key_pending()) backend->poll();
     return getch();
 }
 static uint8_t edit(const struct net_backend *backend, uint8_t row,

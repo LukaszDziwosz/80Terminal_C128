@@ -19,7 +19,7 @@ char getch(void)
     return (char)keys[key_index++];
 }
 uint8_t platform_device(void) { return 8; }
-char kbhit(void) { return idle_polls > 0; }
+uint8_t platform_key_pending(void) { return idle_polls > 0; }
 void screen_font_preview(uint8_t device, void (*idle)(void)) { (void)device; (void)idle; }
 void session_open(const struct net_backend *backend)
 {

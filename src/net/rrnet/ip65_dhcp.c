@@ -5,6 +5,7 @@
 #include "ip65_dhcp.h"
 #include "ip65_ethernet.h"
 #include "ip65_arp.h"
+#include "ip65_ip.h"
 #ifndef RRNET_IP65_TEST
 #pragma code(rrcode)
 #pragma data(rrdata)
@@ -43,31 +44,9 @@ struct options {
 /* Static scratch keeps the 6502 runtime stack small. */
 static struct options reply;
 
-static uint16_t get16(const uint8_t *p)
-{
-    return ((uint16_t)p[0] << 8) | p[1];
-}
-static void put16(uint8_t *p, uint16_t value)
-{
-    p[0] = (uint8_t)(value >> 8); p[1] = (uint8_t)value;
-}
-static uint32_t get32(const uint8_t *p)
-{
-    return ((uint32_t)get16(p) << 16) | get16(p + 2);
-}
-static uint16_t add_word(uint16_t sum, uint16_t word)
-{
-    uint16_t result = (uint16_t)(sum + word);
-    return (uint16_t)(result + (result < sum));
-}
-static uint16_t sum_bytes(uint16_t sum, const uint8_t *p, uint16_t size)
-{
-    while (size >= 2) {
-        sum = add_word(sum, get16(p)); p += 2; size -= 2;
-    }
-    if (size) sum = add_word(sum, (uint16_t)p[0] << 8);
-    return sum;
-}
+#define get32 rr_get32
+#define put16 rr_put16
+#define sum_bytes rr_sum
 static uint8_t equal4(const uint8_t *a, const uint8_t *b)
 {
     return !memcmp(a, b, 4);
@@ -204,38 +183,18 @@ static uint8_t parse_options(const uint8_t *p, uint16_t size, uint8_t main_optio
     return 0; /* Missing END option. */
 }
 
-static void receive_message(uint16_t ticks)
+void rrnet_dhcp_input(uint16_t ticks)
 {
-    const uint8_t *frame = rrnet_ip65_eth_in;
-    const uint8_t *ip = frame + 14;
-    const uint8_t *udp, *boot;
-    uint16_t ihl, total, len, checksum;
+    const uint8_t *boot = rr_udp_payload;
     uint8_t initial = rrnet_dhcp_state == RR_DHCP_REQUESTING;
 
-    if (rrnet_ip65_eth_in_length < 14 + 20 + 8 + OPTIONS ||
-        frame[12] != 8 || frame[13] != 0 || (ip[0] >> 4) != 4 || ip[9] != 17) return;
-    ihl = (uint16_t)(ip[0] & 15) * 4;
-    total = get16(ip + 2);
-    if (ihl < 20 || total < ihl + 8 + OPTIONS ||
-        total > rrnet_ip65_eth_in_length - 14 ||
-        (get16(ip + 6) & 0x3fff) || sum_bytes(0, ip, ihl) != 0xffff) return;
-    udp = ip + ihl;
-    len = get16(udp + 4);
-    if (get16(udp) != 67 || get16(udp + 2) != 68 ||
-        len < 8 + OPTIONS || len > total - ihl) return;
+    if (rr_udp_source != 67 || rr_udp_destination != 68 || rr_udp_length < OPTIONS) return;
     ++rrnet_dhcp_replies;
-    if (get16(udp + 6)) {
-        checksum = sum_bytes(0, ip + 12, 8);
-        checksum = add_word(checksum, 17);
-        checksum = add_word(checksum, len);
-        if (sum_bytes(checksum, udp, len) != 0xffff) return;
-    }
-    boot = udp + 8;
     if (boot[0] != 2 || boot[1] != 1 || boot[2] != 6 ||
         memcmp(boot + 4, xid, 4) || memcmp(boot + 28, rrnet_ip65_mac, 6) ||
         boot[236] != 99 || boot[237] != 130 || boot[238] != 83 || boot[239] != 99) return;
     memset(&reply, 0, sizeof(reply));
-    if (!parse_options(boot + OPTIONS, len - 8 - OPTIONS, 1)) return;
+    if (!parse_options(boot + OPTIONS, rr_udp_length - OPTIONS, 1)) return;
     if ((reply.overload & 1) && !parse_options(boot + 108, 128, 0)) return;
     if ((reply.overload & 2) && !parse_options(boot + 44, 64, 0)) return;
     if ((reply.flags & (HAVE_TYPE | HAVE_SERVER)) != (HAVE_TYPE | HAVE_SERVER) ||
@@ -298,7 +257,7 @@ void rrnet_dhcp_start(uint16_t ticks)
     rrnet_dhcp_sent = rrnet_dhcp_received = rrnet_dhcp_replies = 0;
     rrnet_dhcp_state = RR_DHCP_SELECTING;
 }
-void rrnet_dhcp_poll(uint16_t ticks)
+void rrnet_dhcp_tick(uint16_t ticks)
 {
     uint16_t delta;
     uint8_t result;
@@ -321,11 +280,6 @@ void rrnet_dhcp_poll(uint16_t ticks)
             sent_count = 0; deadline = ticks;
         }
     }
-    if (rrnet_ip65_eth_poll()) {
-        ++rrnet_dhcp_received;
-        if (rrnet_ip65_ipv4[0]) rrnet_ip65_arp_process();
-        receive_message(ticks);
-    }
     if (rrnet_dhcp_state == RR_DHCP_BOUND) return;
     leased = rrnet_dhcp_state == RR_DHCP_RENEWING || rrnet_dhcp_state == RR_DHCP_REBINDING;
     if (!leased && (uint16_t)(ticks - acquire_start) >= ACQUIRE_TICKS) {
@@ -341,6 +295,18 @@ void rrnet_dhcp_poll(uint16_t ticks)
     /* 4, 8, 16 second retries with a small transaction-specific jitter. */
     deadline = ticks + (uint16_t)(240U << (sent_count < 2 ? sent_count : 2)) + (xid[3] & 31);
     if (sent_count < 2) ++sent_count;
+}
+/* Standalone DHCP adapter for the packet tests. Production dispatches the
+ * one shared input frame among DHCP, DNS and TCP in backend.c. */
+void rrnet_dhcp_poll(uint16_t ticks)
+{
+    rrnet_dhcp_tick(ticks);
+    if (rrnet_ip65_eth_poll()) {
+        ++rrnet_dhcp_received;
+        if (rrnet_ip65_ipv4[0]) rrnet_ip65_arp_process();
+        if (rr_ip_parse() && rr_udp_parse()) rrnet_dhcp_input(ticks);
+    }
+    rrnet_dhcp_tick(ticks);
 }
 #ifndef RRNET_IP65_TEST
 #pragma code(code)

@@ -58,3 +58,9 @@ uint8_t platform_key_raw(void)
 {
     return __asm volatile { jsr $ffe4; sta accu };
 }
+uint8_t platform_key_pending(void)
+{
+    /* C128 NDX is $D0. Oscar's conio kbhit() uses the C64 address $C6.
+     * Function-key expansion is bypassed by platform_init(). */
+    return __asm volatile { lda $d0; sta accu };
+}

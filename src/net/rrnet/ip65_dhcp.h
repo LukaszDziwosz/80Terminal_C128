@@ -17,4 +17,7 @@ extern uint16_t rrnet_dhcp_sent, rrnet_dhcp_received, rrnet_dhcp_replies;
  * Each poll consumes at most one Ethernet frame. No IP config before ACK. */
 void rrnet_dhcp_start(uint16_t ticks);
 void rrnet_dhcp_poll(uint16_t ticks);
+void rrnet_dhcp_tick(uint16_t ticks);
+/* Input must already have passed rr_ip_parse() and rr_udp_parse(). */
+void rrnet_dhcp_input(uint16_t ticks);
 #endif

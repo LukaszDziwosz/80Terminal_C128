@@ -70,7 +70,7 @@ void program_run(const struct net_backend *backend)
             line(11, backend->status);
             strncpy(status, backend->status, sizeof(status) - 1);
         }
-        if (!kbhit()) continue;
+        if (!platform_key_pending()) continue;
         key = getch();
         if (key == PETSCII_F8 || key == 'q' || key == 'Q') break;
         if (key == PETSCII_F1) {

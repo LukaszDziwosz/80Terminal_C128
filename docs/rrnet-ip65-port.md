@@ -1,4 +1,21 @@
-# RR-Net TCP plan
+# RR-Net implementation and verification
+
+## Current status
+
+DHCP acquisition is confirmed on hardware (`192.168.68.62`, DNS `1.1.1.1`).
+The backend now dispatches shared IPv4/UDP, DNS and a single asynchronous TCP
+client. DNS supports compressed names and CNAME chains. TCP uses a 536-byte
+MSS, 2 KB receive ring, one segment in flight, retransmission, window updates,
+and FIN/reset handling. New transport tests exercise packet bytes and backend
+state transitions. DNS and TCP still require a real BBS hardware test.
+No listening sockets, IPv4 reassembly or DNS-over-TCP fallback are provided.
+
+The expanded disk overlay initially included buffer BSS at `$6000`, which made
+its contiguous PRG overwrite the live `$8000-$81ff` stack on LOAD. Buffer BSS
+is now resident; only code/data at `$8200` and above belong to `netrr.prg`.
+Every disk build checks this load range before publishing the D64.
+
+The phased plan below records the original implementation sequence.
 
 The RR-Net backend needs an Ethernet driver and a client TCP/IP stack. It
 cannot use an Ultimate-style offload protocol: the C128 must handle DHCP,
@@ -72,7 +89,7 @@ The client validates IPv4 lengths/checksums, nonzero UDP checksums, transaction
 IDs, client MAC, server selection and option bounds, including option overload.
 It rejects fragmented IPv4 packets. Acquisition stops after 60 seconds; the
 backend separately detects a stalled C128 clock. Menus and input waits poll the
-backend so leases can renew. General UDP sockets, DNS lookup, TCP, DHCP RELEASE
+backend so leases can renew. General UDP sockets, DHCP RELEASE
 and address-conflict probing/DECLINE are not implemented.
 
 The first hardware DHCP test timed out. Inspection of the actual Oscar -O2
@@ -86,8 +103,8 @@ iteration, as the original cc65 driver does.
 `tests/rrnet_dhcp_test.c` covers acquisition, rejection of malformed/unrelated
 replies, option overload, retry/clock wrap, NAK, expiry, renewal/rebinding,
 infinite leases, DNS override and backend speed restoration. It runs on the
-host and in Oscar's 6502 emulator. Packet tests use simulated I/O; hardware
-confirmation of DHCP after the assembly fixes is still required. A timeout
+host and in Oscar's 6502 emulator. Packet tests use simulated I/O; DHCP
+has subsequently been confirmed on hardware after the assembly fixes. A timeout
 now reports sent packets, received Ethernet frames and candidate DHCP replies.
 
 The two 1518-byte Ethernet buffers and other RR-Net working data are allocated

@@ -6,13 +6,17 @@
 /* All application buffers are static; do not reserve an unused 1 KB heap. */
 #pragma heapsize(0)
 #pragma region(main, 0x1c80, 0x6000, , , {code, data, bss, heap})
-/* $6000-$7fff: complete 8 KB WiC64 TCP response, outside heap and stack. */
+/* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;
+ * RR-Net uses the same RAM for packet/stream buffers. Only one is loaded. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})
 #pragma overlay(netrr, 1)
 #pragma section(rrcode, 0)
 #pragma section(rrdata, 0)
 #pragma section(rrbss, 0, , , bss)
-#pragma region(rrslot, 0x9000, 0xc000, , 1, {rrcode, rrdata, rrbss})
+/* Keep buffer BSS resident: including it in overlay 1 makes its PRG span
+ * $6000 through the code, overwriting the live stack at $8000 on LOAD. */
+#pragma region(rrbuffers, 0x6000, 0x8000, , , {rrbss})
+#pragma region(rrslot, 0x8200, 0xc000, , 1, {rrcode, rrdata})
 #pragma overlay(netult, 2)
 #pragma section(ultcode, 0)
 #pragma section(ultdata, 0)

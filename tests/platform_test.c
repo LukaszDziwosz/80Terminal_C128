@@ -18,6 +18,15 @@ int main(void)
     assert(after == 0x1306);
     assert((uint16_t)(after - before) == 8);
     assert((int16_t)(after - (uint16_t)(before + 6)) >= 0);
-    puts("KERNAL clock register and deadline tests passed");
+    /* A queued C128 key must be visible even with the C64 count at zero.
+     * Checking availability must neither consume it nor use $C6. */
+    *(volatile uint8_t *)0xc6 = 0;
+    *(volatile uint8_t *)0xd0 = 1;
+    assert(platform_key_pending() == 1);
+    assert(*(volatile uint8_t *)0xd0 == 1);
+    *(volatile uint8_t *)0xc6 = 3;
+    *(volatile uint8_t *)0xd0 = 0;
+    assert(platform_key_pending() == 0);
+    puts("C128 keyboard count, KERNAL clock and deadline tests passed");
     return 0;
 }
