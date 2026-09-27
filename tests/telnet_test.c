@@ -124,6 +124,10 @@ static void test_window_size(void)
     feed(request, sizeof(request));
     expect_sent(expected_80, sizeof(expected_80));
 
+    reset(TELNET_PROFILE_PETSCII_80);
+    feed(request, sizeof(request));
+    expect_sent(expected_80, sizeof(expected_80));
+
     reset(TELNET_PROFILE_VT100_80);
     feed(request, sizeof(request));
     expect_sent(expected_vt100, sizeof(expected_vt100));

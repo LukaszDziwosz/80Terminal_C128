@@ -7,7 +7,7 @@
 #pragma heapsize(0)
 #pragma region(main, 0x1c80, 0x6000, , , {code, data, bss, heap})
 /* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;
- * RR-Net uses the same RAM for packet/stream buffers. Only one is loaded. */
+ * RR-Net and Ultimate use the same RAM for their buffers. Only one is loaded. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})
 #pragma overlay(netrr, 1)
 #pragma section(rrcode, 0)
@@ -20,6 +20,10 @@
 #pragma overlay(netult, 2)
 #pragma section(ultcode, 0)
 #pragma section(ultdata, 0)
+#pragma section(ultbss, 0, , , bss)
+/* Buffer sections share RAM, but stay outside disk overlays so LOAD never
+ * spans the runtime stack. Each adapter initializes its own buffer lengths. */
+#pragma region(ultbuffers, 0x6000, 0x8000, , , {ultbss})
 #pragma region(ultslot, 0x9000, 0xc000, , 2, {ultcode, ultdata})
 #pragma overlay(netwic, 3)
 #pragma section(wicasm, 0)

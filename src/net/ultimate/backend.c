@@ -15,7 +15,13 @@
 
 static enum net_state connection;
 static uint8_t operation, socket_id, have_socket, closing;
+#ifndef ULTIMATE_TEST
+#pragma bss(ultbss)
+#endif
 static uint8_t tx[UCI_PAYLOAD], rx[UCI_PAYLOAD], command[UCI_PAYLOAD + 3];
+#ifndef ULTIMATE_TEST
+#pragma bss(bss)
+#endif
 static uint16_t tx_length, tx_offset, rx_length, rx_offset, tx_started;
 static char message[UCI_STATUS_SIZE];
 static uint16_t init_tick, init_stalled_polls;

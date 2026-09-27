@@ -11,9 +11,15 @@
 #define WRITE(reg, value) uci_test_write(reg, value)
 #endif
 
+#ifndef ULTIMATE_TEST
+#pragma bss(ultbss)
+#endif
 uint8_t uci_reply[UCI_REPLY_SIZE];
-uint16_t uci_reply_length;
 char uci_status[UCI_STATUS_SIZE];
+#ifndef ULTIMATE_TEST
+#pragma bss(bss)
+#endif
+uint16_t uci_reply_length;
 static uint16_t status_length;
 static uint16_t started, deadline;
 static uint8_t stage;

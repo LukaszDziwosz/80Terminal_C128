@@ -19,9 +19,24 @@ connections, disconnecting and reconnecting. The latest VIC blanking and
 F7 disconnect / Ctrl-C passthrough changes were also validated on hardware.
 WiC64 was previously verified with firmware 2.1.0.
 
-The ANSI/VT100 (not yet separated) uses the C128 VDC directly, loads
-the CP437 font, and supports cursor motion, clearing, scrolling, colors,
-terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests.
+After entering the host and port, choose one of three 80-column terminal types:
+
+| Key | Mode | Size | Telnet terminal type |
+| --- | --- | --- | --- |
+| 1 | ANSI, with CP437 graphics and colors | 80x25 | `ANSI` |
+| 2 | Native PETSCII | 80x25 | `C128` |
+| 3 | VT100, with DEC special graphics | 80x24 | `VT100` |
+
+There is no 40-column PETSCII mode. ANSI and VT100 share the VDC renderer and
+CP437 font. VT100 follows the original `80Terminal_cc65` mode, with G0/G1
+character-set designation and SI/SO switching, scroll margins, origin mode,
+reverse index, configurable tab stops, saved cursor/rendition state, and
+application cursor keys. Both modes support editing controls and terminal
+identification/status replies. VT100 leaves the physical 25th row blank and
+reports 80x24 through Telnet NAWS.
+
+The separate terminal choices and expanded parser have host and 6502 tests;
+they were added after the adapter hardware validation recorded above.
 RR-Net implements DHCP with lease renewal, DNS lookup and one TCP client stream.
 RR-Net DHCP, DNS and TCP/Telnet operation are validated on hardware.
 Shared Telnet, XMODEM and phonebook cores have tests.
@@ -33,6 +48,11 @@ Press any key to return to the main screen, then **F3** for a new connection;
 there is no suspended session to resume. **F1** retries a failed interface.
 The VIC display stays blank during operation at 2 MHz, including temporary
 1 MHz cartridge accesses, and its display setting is restored on exit.
+
+Adapter buffers share the reserved `$6000-$7fff` RAM area. Ultimate's buffers
+use this area alongside the existing RR-Net/WiC64 alternatives, leaving room
+for the shared terminal parser. Only the selected adapter uses these buffers;
+they are excluded from disk overlays so loading cannot overwrite the stack.
 
 ## Ultimate initialization
 

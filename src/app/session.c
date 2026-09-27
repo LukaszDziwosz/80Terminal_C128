@@ -12,7 +12,7 @@ static char port_text[6] = "23";
 static uint8_t outgoing[1024], incoming[128];
 static uint16_t out_length, out_offset;
 static uint8_t out_overflow;
-static uint8_t ascii_mode = 1;
+static enum telnet_profile profile = TELNET_PROFILE_ANSI_80;
 
 static void line(uint8_t row, const char *s)
 {
@@ -91,11 +91,12 @@ static void terminal(const struct net_backend *backend)
     uint16_t last_receive = 0;
     uint8_t cursor_pending = 0;
     uint8_t disconnected = 0;
+    uint8_t ascii_mode = telnet_profile_is_ansi(profile);
     char counters[64];
     char end_status[80];
     out_length = out_offset = out_overflow = 0;
-    telnet_init(ascii_mode ? TELNET_PROFILE_ANSI_80 : TELNET_PROFILE_PETSCII_80, enqueue);
-    if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device())) {
+    telnet_init(profile, enqueue);
+    if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), telnet_profile_is_vt100(profile))) {
         clrscr();
         line(5, "Could not load CP437 font from the boot disk.");
         getch();
@@ -201,12 +202,13 @@ void session_open(const struct net_backend *backend)
         if (port > 0 && port <= 65535) break;
         line(14, "Invalid port. Press a key to try again."); wait_key(backend);
     }
-    line(12, "1  ANSI/VT100 80 columns         2  PETSCII 80/Telnet");
-    line(14, "ANSI sends terminal identification, cursor and status replies.");
+    line(12, "1  ANSI 80x25       2  PETSCII 80x25       3  VT100 80x24");
+    line(14, "ANSI: CP437/color. VT100: DEC graphics and terminal controls.");
     line(16, "During a session: F7 disconnects; CTRL-C goes to the host.");
     do { key = wait_key(backend); if (cancelled(key)) { shutdown(backend); return; } }
-    while (key != '1' && key != '2');
-    ascii_mode = key == '1';
+    while (key != '1' && key != '2' && key != '3');
+    profile = key == '1' ? TELNET_PROFILE_ANSI_80 :
+              key == '2' ? TELNET_PROFILE_PETSCII_80 : TELNET_PROFILE_VT100_80;
     /* Some transports (WiC64) perform TCP open as one firmware request.
      * Draw this before starting it so a DNS or remote-connect wait is visible. */
     clrscr();

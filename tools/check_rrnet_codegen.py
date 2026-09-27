@@ -20,9 +20,10 @@ print("RR-Net generated code: register selection and four FIFO header reads veri
 
 # An overlay PRG is contiguous, including gaps between its regions. Buffer
 # BSS below $8000 must not pull the disk overlay across the active stack.
-overlay = Path(sys.argv[1]).with_name("netrr.prg").read_bytes()
-load = int.from_bytes(overlay[:2], "little")
-end = load + len(overlay) - 2
-if load < 0x8200 or end > 0xc000:
-    raise SystemExit(f"RR-Net overlay overlaps resident memory: ${load:04x}-${end:04x}")
-print(f"RR-Net overlay: ${load:04x}-${end:04x}, clear of runtime stack")
+for name, minimum in (("netrr", 0x8200), ("netult", 0x9000), ("netwic", 0x9000)):
+    overlay = Path(sys.argv[1]).with_name(name + ".prg").read_bytes()
+    load = int.from_bytes(overlay[:2], "little")
+    end = load + len(overlay) - 2
+    if load < minimum or end > 0xc000:
+        raise SystemExit(f"{name} overlay overlaps resident memory: ${load:04x}-${end:04x}")
+    print(f"{name} overlay: ${load:04x}-${end:04x}, clear of runtime stack")
