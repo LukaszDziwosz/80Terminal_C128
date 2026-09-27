@@ -1,4 +1,7 @@
 #include <assert.h>
+#ifdef __OSCAR64C__
+#pragma heapsize(0)
+#endif
 #include <stdio.h>
 #include <string.h>
 #include "network.h"

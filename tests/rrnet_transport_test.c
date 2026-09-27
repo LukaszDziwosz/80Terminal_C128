@@ -19,12 +19,14 @@ static uint8_t wire_in[1518], wire_out[1518];
 static uint16_t input_size, output_size, ticks, client_port;
 static uint8_t send_error, speed, check_speed;
 static unsigned packets;
+static uint8_t repeated_frames;
+static unsigned slow_calls;
 static uint32_t client_seq, server_seq;
 static const uint8_t own_ip[4] = {192,168,68,62};
 static const uint8_t gateway[4] = {192,168,68,1};
 static const uint8_t peer[4] = {203,0,113,42};
 static const uint8_t mac[6] = {0x10,0x20,0x30,0x40,0x50,0x60};
-uint8_t platform_slow(void) { uint8_t old = speed; speed = 0; return old; }
+uint8_t platform_slow(void) { uint8_t old = speed; speed = 0; ++slow_calls; return old; }
 void platform_restore_speed(uint8_t s) { speed = s; }
 uint16_t platform_ticks(void) { return ticks; }
 uint8_t rrnet_ip65_init(void) { assert(!speed); return 0; }
@@ -33,7 +35,9 @@ uint16_t rrnet_ip65_receive(uint8_t *p, uint16_t capacity)
 {
     uint16_t n = input_size;
     if (check_speed) assert(!speed);
-    assert(n <= capacity); memcpy(p, wire_in, n); input_size = 0; return n;
+    assert(n <= capacity); memcpy(p, wire_in, n);
+    if (!repeated_frames || !--repeated_frames) input_size = 0;
+    return n;
 }
 uint8_t rrnet_ip65_send(const uint8_t *p, uint16_t n)
 {
@@ -102,6 +106,7 @@ static void configure(void)
     memset(rrnet_dhcp_dns, 1, 4); rrnet_ip65_arp_init();
     rr_dns_cancel(); rr_tcp_init(); ticks = 65000; speed = 1;
     packets = 0; input_size = output_size = 0; send_error = check_speed = 0;
+    repeated_frames = 0; slow_calls = 0;
 }
 static void begin_tcp(void)
 {
@@ -180,9 +185,14 @@ static void test_window_and_bad_input(void)
     assert(w16(wire_out + 48) == 0);
     tcp_packet(server_seq, client_seq, 0x18, data, 1, 4096); feed_tcp();
     assert(w32(wire_out + 42) == server_seq);
+    count = packets;
     assert(rr_tcp_read(out, 512) == 512); rr_tcp_poll(ticks);
-    assert(w16(wire_out + 48) == 512);
-    for (i = 0; i < 3; ++i) assert(rr_tcp_read(out, 512) == 512);
+    assert(packets == count); /* Do not reopen in sub-MSS increments. */
+    assert(rr_tcp_read(out, 128) == 128); rr_tcp_poll(ticks);
+    assert(w16(wire_out + 48) == 640);
+    for (i = 0; i < 2; ++i) assert(rr_tcp_read(out, 512) == 512);
+    assert(rr_tcp_read(out, 512) == 384);
+    assert(rr_tcp_stats.peak == 2048 && rr_tcp_stats.zero_windows > 0);
     tcp_packet(server_seq, client_seq, 0x18, data, 1, 4096); feed_tcp(); ++server_seq;
     assert(rr_tcp_read(out, 512) == 1 && out[0] == 0x55);
     count = packets;
@@ -226,6 +236,23 @@ static void test_send_retransmit_and_close(void)
     assert(wire_out[47] == 0x10 && rr_tcp_state() == NET_CLOSED);
     assert(rr_tcp_connect(peer, 23, ticks) == NET_PENDING); rr_tcp_poll(ticks);
     assert(w16(wire_out + 34) != client_port);
+}
+static void test_render_batch_ack_cost(void)
+{
+    uint8_t data[RR_TCP_MSS], out[128];
+    uint8_t i;
+    unsigned count;
+    memset(data, 'x', sizeof(data)); begin_tcp(); establish(4096);
+    tcp_packet(server_seq, client_seq, 0x18, data, sizeof(data), 4096); feed_tcp();
+    count = packets;
+    for (i = 0; i < 4; ++i) {
+        assert(rr_tcp_read(out, sizeof(out)) == 128);
+        rr_tcp_poll(ticks);
+        assert(packets == count);
+    }
+    assert(rr_tcp_read(out, sizeof(out)) == 24); rr_tcp_poll(ticks);
+    assert(packets == count + 1 && w16(wire_out + 48) == RR_TCP_RX_CAPACITY);
+    puts("536-byte render replay: 1 window-update ACK for 5 application reads");
 }
 static void test_zero_window_and_close_timeout(void)
 {
@@ -335,6 +362,22 @@ static void test_backend_tcp_and_renewal(void)
     assert(b->state() == NET_CONNECTED);
     rrnet_dhcp_state = RR_DHCP_BOUND; b->poll();
     assert(b->state() == NET_CONNECTED);
+    /* Eight queued copies: one poll must consume only four, ACK promptly,
+     * restore speed, and deliver the payload exactly once. */
+    tcp_packet(server_seq, client_seq, 0x18, (const uint8_t *)"abc", 3, 4096);
+    repeated_frames = 8;
+    {
+        unsigned calls = slow_calls;
+        uint8_t data[8];
+        b->poll();
+        assert(repeated_frames == 4 && speed == 1);
+        assert(slow_calls == calls + 8); /* Four RX and four ACK transfers. */
+        assert(b->read(data, sizeof(data)) == 3 && !memcmp(data, "abc", 3));
+        b->poll();
+        assert(repeated_frames == 0 && b->read(data, sizeof(data)) == 0);
+        assert(rr_tcp_stats.duplicates == 7);
+    }
+    server_seq += 3;
     tcp_packet(server_seq, client_seq, 0x19, (const uint8_t *)"bye", 3, 4096); b->poll();
     assert(b->state() == NET_CONNECTED);
     {
@@ -349,6 +392,7 @@ int main(void)
 {
     test_handshake_and_failures(); test_receive_and_eof(); test_window_and_bad_input();
     test_send_retransmit_and_close(); test_zero_window_and_close_timeout();
+    test_render_batch_ack_cost();
     test_dns(); test_ip_validation(); test_backend_tcp_and_renewal();
     puts("RR-Net IPv4, DNS, TCP stream and backend tests passed");
     return 0;

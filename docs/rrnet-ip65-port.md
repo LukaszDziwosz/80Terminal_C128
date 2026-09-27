@@ -2,12 +2,43 @@
 
 ## Current status
 
+User validation on 2026-09-27 confirms all three adapters (WiC64, 1541 Ultimate
+II+, and RR-Net) working on real C128 hardware. RR-Net DHCP, DNS and TCP/Telnet
+connections, disconnecting and reconnecting are validated. The shared VIC
+blanking and F7 disconnect / Ctrl-C passthrough changes are also validated.
+
+### Receive-performance checkpoint
+
+RR-Net Telnet is now confirmed on hardware. To reduce pauses, protocol work
+runs at the caller's 2 MHz speed; Ethernet FIFO transfers alone select 1 MHz.
+Each poll drains at most four frames and acknowledges TCP input before the
+next frame. Standalone window updates are coalesced until 536 bytes have been
+consumed or the receive queue is empty. Data ACKs remain immediate. This
+avoids an extra ACK for each 128-byte rendering batch. The MSS and 2 KB receive
+buffer stay unchanged for this comparison.
+
+While connected, the status snapshot updates once a second. Press F7
+after the intro to see `RR peak ... gap ... dup ... retry ... zero ... wait ...`:
+
+- `peak`: maximum receive queue occupancy in bytes (capacity 2048).
+- `gap`: payload segments ahead of the expected sequence (loss or reordering).
+- `dup`: payload segments starting before the expected sequence (includes overlap).
+- `retry`: our transmitted segments retransmitted; not the server's retries.
+- `zero`: packets advertising a full receive queue, not distinct stall events.
+- `wait`: longest interval between polls, in 1/60-second ticks. Includes packet
+  processing and application/rendering time; it is not a network RTT.
+
+Counters reset at TCP connect, are 16-bit, and may wrap on long sessions.
+Hardware validation confirms operation; no quantified BBS speedup is recorded.
+Host and 6502 test scenarios replay window pressure and bounded bursts.
+Window-update background: [RFC 9293 section 3.8.6.2.2](https://www.rfc-editor.org/rfc/rfc9293.html#section-3.8.6.2.2).
+
 DHCP acquisition is confirmed on hardware (`192.168.68.62`, DNS `1.1.1.1`).
 The backend now dispatches shared IPv4/UDP, DNS and a single asynchronous TCP
 client. DNS supports compressed names and CNAME chains. TCP uses a 536-byte
 MSS, 2 KB receive ring, one segment in flight, retransmission, window updates,
 and FIN/reset handling. New transport tests exercise packet bytes and backend
-state transitions. DNS and TCP still require a real BBS hardware test.
+state transitions. DNS and TCP/Telnet are now confirmed on real hardware.
 No listening sockets, IPv4 reassembly or DNS-over-TCP fallback are provided.
 
 The expanded disk overlay initially included buffer BSS at `$6000`, which made
@@ -55,8 +86,8 @@ Hardware reference confirmed by the user with Kipperterm 128:
   Keep DHCP for address, netmask and gateway, and apply the DNS override after
   DHCP configuration, including any renewal. Do not hardcode the photographed
   IP address: it is a reference lease from another application.
-- These values are reference data. DHCP now acquires the live network
-  configuration; DNS lookup is not implemented yet.
+- These values are reference data. DHCP acquires the live network
+  configuration; DNS lookup is implemented and validated on hardware.
 
 Kipperterm's `client/inc/config_menu.i` maps F4 to DNS editing. From its main
 menu use F7, F4, enter `1.1.1.1`, Return, then F7 to return to the main menu.
@@ -66,7 +97,7 @@ The result must implement the existing `struct net_backend` contract:
 ```text
 init()       detect CS8900A → obtain network configuration → NET_CLOSED
 connect()    resolve hostname → establish one TCP connection → NET_CONNECTED
-poll()       drain one Ethernet frame and advance TCP timers/retransmits
+poll()       drain up to four Ethernet frames and advance TCP timers/retransmits
 read()       return buffered TCP bytes
 write()      queue one bounded TCP payload
 close()      send FIN / finish teardown → NET_CLOSED
@@ -108,9 +139,13 @@ has subsequently been confirmed on hardware after the assembly fixes. A timeout
 now reports sent packets, received Ethernet frames and candidate DHCP replies.
 
 The two 1518-byte Ethernet buffers and other RR-Net working data are allocated
-in the overlay's `rrbss` section, with explicit initialization before use.
+in the resident `rrbss` section, with explicit initialization before use.
 
-## Phased implementation
+## Original phased implementation plan (historical)
+
+This records the original plan, not outstanding work. See Current status for
+the implemented and hardware-validated behavior. Session cancellation now uses
+F7; Ctrl-C and RUN/STOP send byte 3 to the host.
 
 1. **CS8900A driver**
    - Create an Oscar64-native RR-Net hardware module at `$DE00-$DE0F`.
@@ -162,7 +197,7 @@ void rrnet_read_packet(void)
 }
 
 
-## First implementation boundary
+## Original first implementation boundary (historical)
 
 The first code change should be the CS8900A hardware module only. It has a
 clear hardware test and lets us prove the C128/RR-Net bus timing and genuine

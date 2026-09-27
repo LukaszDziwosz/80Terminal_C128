@@ -234,6 +234,34 @@ static void test_cancel_during_connect_and_validation(void)
     assert(net->connect("bbs.example", 2323) == NET_PENDING);
     net->close(); until(NET_CLOSED); assert(close_calls == 1);
 }
+static void test_reconnect(void)
+{
+    uint8_t byte = 3;
+    reset();
+    for (uint8_t cycle = 0; cycle < 3; ++cycle) {
+        connect_ok();
+        /* CTRL-C is ordinary TCP payload, including after reconnecting. */
+        assert(net->write(&byte, 1) == 1);
+        for (unsigned i = 0; i < 30; ++i) step();
+        assert(net->state() == NET_CONNECTED);
+        assert(sent_size == cycle + 1 && sent_bytes[cycle] == 3);
+        net->close(); until(NET_CLOSED);
+        assert(close_calls == cycle + 1);
+    }
+    connect_ok(); read_mode = 1; until(NET_EOF);
+    net->close(); until(NET_CLOSED);
+    read_mode = 2; connect_ok();
+    net->close(); until(NET_CLOSED);
+    /* Cancel an in-flight open, then connect again without init(). */
+    assert(net->connect("bbs.example", 2323) == NET_PENDING);
+    net->close(); until(NET_CLOSED);
+    connect_ok(); net->close(); until(NET_CLOSED);
+    error_reply = 1;
+    assert(net->connect("bbs.example", 2323) == NET_PENDING);
+    until(NET_FAILED); net->close(); until(NET_CLOSED);
+    error_reply = 0;
+    connect_ok(); net->close(); until(NET_CLOSED);
+}
 int main(void)
 {
     test_initialization();
@@ -243,6 +271,7 @@ int main(void)
     test_no_data_and_close();
     test_failures();
     test_cancel_during_connect_and_validation();
+    test_reconnect();
     puts("Ultimate async TCP/UCI tests passed");
     return 0;
 }

@@ -5,6 +5,9 @@
 #include "ip65_ethernet.h"
 #include "ip65_arp.h"
 
+uint8_t platform_slow(void) { return 1; }
+void platform_restore_speed(uint8_t value) { (void)value; }
+
 #define PP_LO 0xde02U
 #define PP_HI 0xde03U
 #define PP_DATA_LO 0xde04U

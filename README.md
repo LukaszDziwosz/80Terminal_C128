@@ -13,17 +13,26 @@ still to be ported.
 
 ## Current baseline
 
-WiC64 detection and fast TCP reception are verified on real C128 hardware with
-WiC64 firmware 2.1.0. The ANSI/VT100 (not yet separated) uses the C128 VDC directly, loads
+All three adapters—WiC64, 1541 Ultimate II+, and RR-Net—are confirmed working
+on real C128 hardware by user validation on 2026-09-27, including terminal
+connections, disconnecting and reconnecting. The latest VIC blanking and
+F7 disconnect / Ctrl-C passthrough changes were also validated on hardware.
+WiC64 was previously verified with firmware 2.1.0.
+
+The ANSI/VT100 (not yet separated) uses the C128 VDC directly, loads
 the CP437 font, and supports cursor motion, clearing, scrolling, colors,
-terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests;
-real BBS interaction remains the next hardware check. Ultimate detection veified needs more tests,
+terminal queries, and ANSI cursor keys. Its parser runs in host and 6502 tests.
 RR-Net implements DHCP with lease renewal, DNS lookup and one TCP client stream.
-DHCP acquisition is verified on hardware; DNS/TCP still need hardware testing.
+RR-Net DHCP, DNS and TCP/Telnet operation are validated on hardware.
 Shared Telnet, XMODEM and phonebook cores have tests.
 
-The PETSCII terminal keeps its native input mapping. RUN/STOP shows counts of
-keys read and TCP bytes accepted, including Telnet negotiation.
+During a session, **F7 disconnects** and **Ctrl-C goes to the host**. RUN/STOP
+also sends byte 3 (the KERNAL reports the same code for both keys).
+The socket closes before the session summary shows key and TCP byte counts.
+Press any key to return to the main screen, then **F3** for a new connection;
+there is no suspended session to resume. **F1** retries a failed interface.
+The VIC display stays blank during operation at 2 MHz, including temporary
+1 MHz cartridge accesses, and its display setting is restored on exit.
 
 ## Ultimate initialization
 
@@ -51,7 +60,8 @@ RR-Net initialization requests an address, subnet mask and gateway via DHCP.
 DNS is overridden to `1.1.1.1` after each accepted lease. The status line shows
 the assigned IP, or reports a timeout after 60 seconds with sent, received
 Ethernet-frame and DHCP-reply counts. F1 retries. Lease timers run during menu,
-font preview and input waits. DHCP acquisition now works on the real adapter.
+font preview and input waits. DHCP and terminal connections are validated on
+the real adapter.
 Connections accept a hostname or dotted IPv4 address. The TCP client uses a
 536-byte MSS, a 2 KB receive queue, retransmission and flow control.
 

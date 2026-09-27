@@ -6,6 +6,7 @@ int main(void)
     uint8_t out[3];
     unsigned key;
     assert(keyboard_encode(0, 0, out) == 0);
+    assert(keyboard_encode(3, 0, out) == 1 && out[0] == 3);
     for (key = 0x41; key <= 0x5a; ++key) {
         assert(keyboard_encode(key, 0, out) == 1 && out[0] == key + 32);
         assert(keyboard_encode(key + 128, 0, out) == 1 && out[0] == key);

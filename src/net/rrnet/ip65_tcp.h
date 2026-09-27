@@ -5,6 +5,10 @@
 #define RR_TCP_RX_CAPACITY 2048U
 enum rr_tcp_failure { RR_TCP_NO_ERROR, RR_TCP_REFUSED, RR_TCP_RESET, RR_TCP_TIMEOUT, RR_TCP_IO_ERROR };
 extern uint8_t rr_tcp_error;
+struct rr_tcp_counters {
+    uint16_t peak, gaps, duplicates, retries, zero_windows, acks, max_poll_ticks;
+};
+extern struct rr_tcp_counters rr_tcp_stats;
 void rr_tcp_init(void);
 int rr_tcp_connect(const uint8_t *ip, uint16_t port, uint16_t ticks);
 void rr_tcp_input(uint16_t ticks);

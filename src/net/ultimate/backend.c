@@ -72,6 +72,9 @@ static int connect_inner(const char *hostname, uint16_t port)
     command[0] = 3; command[1] = 7;
     command[2] = (uint8_t)port; command[3] = (uint8_t)(port >> 8);
     command[4 + n] = 0;
+    /* A previous close must not cancel this new session. */
+    closing = 0;
+    tx_length = rx_length = tx_offset = rx_offset = 0;
     if (!start(OPEN, n + 5, 1800)) return NET_IO_ERROR;
     connection = NET_CONNECTING;
     set_message("Resolving host / connecting (up to 30 seconds)...");

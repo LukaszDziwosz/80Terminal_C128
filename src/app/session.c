@@ -90,7 +90,9 @@ static void terminal(const struct net_backend *backend)
     uint16_t key_count = 0, tx_count = 0;
     uint16_t last_receive = 0;
     uint8_t cursor_pending = 0;
+    uint8_t disconnected = 0;
     char counters[64];
+    char end_status[80];
     out_length = out_offset = out_overflow = 0;
     telnet_init(ascii_mode ? TELNET_PROFILE_ANSI_80 : TELNET_PROFILE_PETSCII_80, enqueue);
     if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device())) {
@@ -101,7 +103,7 @@ static void terminal(const struct net_backend *backend)
     }
     if (!ascii_mode) {
         clrscr();
-        line(0, "Connected - RUN/STOP disconnects. Remote echo; no local echo.");
+        line(0, "Connected - F7 disconnects. CTRL-C goes to the host.");
         gotoxy(0, 2);
     }
     for (;;) {
@@ -140,7 +142,9 @@ static void terminal(const struct net_backend *backend)
             cursor_pending = 0;
         }
         key = platform_key_raw();
-        if (key == PETSCII_STOP) break;
+        /* RUN/STOP and CTRL-C both produce $03 through GETIN. Reserve
+         * only F7 locally so remote interrupt characters survive. */
+        if (key == PETSCII_F7) { disconnected = 1; break; }
         if (key) {
             ++key_count;
             key_length = ascii_mode ? ansi_terminal_key(key, encoded) :
@@ -153,10 +157,17 @@ static void terminal(const struct net_backend *backend)
     if (ascii_mode) ansi_terminal_shutdown();
     iocharmap(IOCHM_PETSCII_2);
     clrscr();
-    line(5, out_overflow ? "Transmit queue overflow; session stopped." : backend->status);
+    strncpy(end_status, backend->status, sizeof(end_status) - 1);
+    end_status[sizeof(end_status) - 1] = 0;
+    shutdown(backend);
+    line(22, "");
+    line(5, out_overflow ? "Transmit queue overflow; session stopped." :
+         disconnected ? "Disconnected." : end_status);
+    if (backend->state() == NET_FAILED) line(9, backend->status);
     sprintf(counters, "Keys read: %u   TCP bytes sent (incl. Telnet): %u", key_count, tx_count);
     line(7, counters);
     line(20, "Press any key to return to the main screen.");
+    line(21, "Then press F3 for a new connection, or F1 if the interface failed.");
     wait_key(backend);
 }
 void session_open(const struct net_backend *backend)
@@ -192,6 +203,7 @@ void session_open(const struct net_backend *backend)
     }
     line(12, "1  ANSI/VT100 80 columns         2  PETSCII 80/Telnet");
     line(14, "ANSI sends terminal identification, cursor and status replies.");
+    line(16, "During a session: F7 disconnects; CTRL-C goes to the host.");
     do { key = wait_key(backend); if (cancelled(key)) { shutdown(backend); return; } }
     while (key != '1' && key != '2');
     ascii_mode = key == '1';

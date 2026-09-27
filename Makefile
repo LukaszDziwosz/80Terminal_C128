@@ -46,7 +46,7 @@ build/test-program-init: tests/program_init_test.c tests/stubs/conio.h src/app/p
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DPROGRAM_TEST -Iinclude tests/program_init_test.c src/app/program.c -o $@
 
 build/test-rrnet-ip65-hw: tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_rrnet.h src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_ethernet.h src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_arp.h | build
-	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Isrc/net/rrnet $< src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c -o $@
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Iinclude -Isrc/net/rrnet $< src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c -o $@
 
 build/test-rrnet-dhcp: $(DHCP_TEST_SOURCES) $(wildcard src/net/rrnet/*.h) include/network.h include/platform.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Iinclude -Isrc/net/rrnet $(DHCP_TEST_SOURCES) -o $@
@@ -66,7 +66,7 @@ test-oscar: build/wic64bridge.bin | build
 	done
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
 	$(OSCAR64) -n -O2 -ea -dPROGRAM_TEST -i=include -o=build/test-program-init.prg tests/program_init_test.c src/app/program.c
-	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=src/net/rrnet -o=build/test-rrnet-ip65-hw.prg tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c
+	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=include -i=src/net/rrnet -o=build/test-rrnet-ip65-hw.prg tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c
 	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=include -i=src/net/rrnet -o=build/test-rrnet-dhcp.prg $(DHCP_TEST_SOURCES)
 	$(OSCAR64) -n -O2 -ea -dNOFLOAT -dNOLONG -dRRNET_IP65_TEST -i=include -i=src/net/rrnet -o=build/test-rrnet-transport.prg tests/rrnet_transport_test.c $(RRNET_PROTOCOL_SOURCES)
 	$(OSCAR64) -n -O2 -ea -o=build/test-wic64-bridge.prg tests/wic64_bridge_test.c

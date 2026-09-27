@@ -22,6 +22,7 @@ static uint8_t previous_dhcp_state;
 static uint16_t previous_tick, stalled_polls;
 static uint8_t hardware_ready, stream_active, resolving, configured_ip[4];
 static uint16_t remote_port;
+static uint16_t stats_tick;
 
 static void set_message(const char *text)
 {
@@ -60,15 +61,21 @@ static void network_status(void)
 static void poll_inner(uint16_t ticks)
 {
     int new_state;
+    uint8_t budget = 4;
     rrnet_dhcp_tick(ticks);
-    if (rrnet_ip65_eth_poll()) {
+    /* Drain a bounded burst before returning to the renderer/keyboard.
+     * ACK each TCP frame promptly; only hardware transfers run at 1 MHz. */
+    while (budget-- && rrnet_ip65_eth_poll()) {
         ++rrnet_dhcp_received;
         if (rrnet_ip65_ipv4[0]) rrnet_ip65_arp_process();
         if (rr_ip_parse()) {
             if (rr_ip_protocol == 17 && rr_udp_parse()) {
                 if (rr_udp_destination == 68) rrnet_dhcp_input(ticks);
                 else rr_dns_input(ticks);
-            } else if (rr_ip_protocol == 6) rr_tcp_input(ticks);
+            } else if (rr_ip_protocol == 6) {
+                rr_tcp_input(ticks);
+                rr_tcp_poll(ticks);
+            }
         }
     }
     rrnet_dhcp_tick(ticks);
@@ -142,21 +149,29 @@ static void poll_inner(uint16_t ticks)
                             rr_tcp_error == RR_TCP_TIMEOUT ? "TCP connection timed out." :
                             "RR-Net packet transmission failed.");
         }
+        if (connection == NET_CONNECTED && (uint16_t)(ticks - stats_tick) >= 60U) {
+            stats_tick = ticks;
+            sprintf(message, "RR peak %u gap %u dup %u retry %u zero %u wait %u",
+                    rr_tcp_stats.peak, rr_tcp_stats.gaps, rr_tcp_stats.duplicates,
+                    rr_tcp_stats.retries, rr_tcp_stats.zero_windows, rr_tcp_stats.max_poll_ticks);
+        }
     }
 }
 static void poll(void)
 {
     uint16_t ticks;
-    uint8_t speed;
     if (!hardware_ready) return;
     ticks = platform_ticks();
+    if (stream_active && connection == NET_CONNECTED &&
+        (uint16_t)(ticks - previous_tick) > rr_tcp_stats.max_poll_ticks)
+        rr_tcp_stats.max_poll_ticks = (uint16_t)(ticks - previous_tick);
     if (ticks != previous_tick) { previous_tick = ticks; stalled_polls = 0; }
     else if (++stalled_polls == 8192) {
         connection = NET_FAILED; hardware_ready = 0;
         rr_tcp_abort(); rr_dns_cancel();
         set_message("Network stopped: C128 clock is not advancing. F1 retries."); return;
     }
-    speed = platform_slow(); poll_inner(ticks); platform_restore_speed(speed);
+    poll_inner(ticks);
 }
 static int connect_host(const char *hostname, uint16_t port)
 {
@@ -166,6 +181,7 @@ static int connect_host(const char *hostname, uint16_t port)
     result = rr_dns_start(hostname, platform_ticks());
     if (result < 0) { set_message("Invalid hostname or IPv4 address."); return result; }
     remote_port = port; stream_active = resolving = 1; connection = NET_CONNECTING;
+    stats_tick = platform_ticks();
     set_message(result == NET_OK ? "Opening TCP connection..." : "Resolving hostname via 1.1.1.1...");
     return NET_PENDING;
 }
@@ -174,10 +190,8 @@ static int write_stream(const uint8_t *buffer, uint16_t length) { return rr_tcp_
 static int state(void) { return (int)connection; }
 static void close_connection(void)
 {
-    uint8_t speed = platform_slow();
     rr_dns_cancel(); resolving = 0;
     rr_tcp_close(platform_ticks());
-    platform_restore_speed(speed);
     connection = (enum net_state)rr_tcp_state();
     if (connection == NET_CLOSED) {
         stream_active = 0;

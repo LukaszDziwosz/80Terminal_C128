@@ -28,11 +28,16 @@ static uint32_t snd_una, snd_nxt, rcv_nxt, window_seq, window_ack;
 static uint16_t port_serial = 49152;
 static uint32_t isn_serial = 0x12800000UL;
 uint8_t rr_tcp_error;
+struct rr_tcp_counters rr_tcp_stats;
+static uint16_t freed_since_ack;
 
 static uint8_t before(uint32_t a, uint32_t b) { return (int32_t)(a - b) < 0; }
 static void fail(uint8_t error) { rr_tcp_error = error; phase = FAILED; }
 void rr_tcp_abort(void) { phase = CLOSED; queued = flight = rx_count = 0; ack_pending = local_close = 0; }
-void rr_tcp_init(void) { rr_tcp_abort(); rr_tcp_error = RR_TCP_NO_ERROR; }
+void rr_tcp_init(void) {
+    rr_tcp_abort(); rr_tcp_error = RR_TCP_NO_ERROR;
+    memset(&rr_tcp_stats, 0, sizeof(rr_tcp_stats)); freed_since_ack = 0;
+}
 int rr_tcp_state(void)
 {
     if (phase == FAILED) return NET_FAILED;
@@ -59,7 +64,7 @@ int rr_tcp_connect(const uint8_t *ip, uint16_t port, uint16_t ticks)
     rto = probe_rto = 60; probe_at = ticks + 60;
     return NET_PENDING;
 }
-/* ARP and packet transmission must be called at 1 MHz by the backend. */
+/* Ethernet helpers switch to 1 MHz only for the hardware transfer. */
 static uint8_t send_segment(uint8_t flags, uint32_t seq, const uint8_t *data,
                              uint16_t size, uint16_t ticks)
 {
@@ -75,7 +80,13 @@ static uint8_t send_segment(uint8_t flags, uint32_t seq, const uint8_t *data,
     if (flags & SYN) { out[20] = 2; out[21] = 4; rr_put16(out + 22, RR_TCP_MSS); }
     if (size) memcpy(out + header, data, size);
     rr_put16(out + 16, (uint16_t)~rr_transport_sum(rrnet_ip65_eth_out + 14, out, header + size));
-    return rrnet_ip65_eth_send();
+    result = rrnet_ip65_eth_send();
+    if (!result && (flags & ACK)) {
+        freed_since_ack = 0;
+        if (!size && flags == ACK) ++rr_tcp_stats.acks;
+        if (!local_close && rx_count == RR_TCP_RX_CAPACITY) ++rr_tcp_stats.zero_windows;
+    }
+    return result;
 }
 static uint8_t syn_options(const uint8_t *p, uint16_t length)
 {
@@ -108,6 +119,7 @@ static void receive_bytes(const uint8_t *data, uint16_t size)
     memcpy(rx + tail, data, first);
     memcpy(rx, data + first, size - first);
     rx_count += size;
+    if (rx_count > rr_tcp_stats.peak) rr_tcp_stats.peak = rx_count;
 }
 void rr_tcp_input(uint16_t ticks)
 {
@@ -135,6 +147,10 @@ void rr_tcp_input(uint16_t ticks)
         flags &= (uint8_t)~SYN;
     }
     space = local_close ? RR_TCP_RX_CAPACITY : RR_TCP_RX_CAPACITY - rx_count;
+    if (size && !(flags & (RST | SYN))) {
+        if (before(rcv_nxt, seq)) ++rr_tcp_stats.gaps;
+        else if (before(seq, rcv_nxt)) ++rr_tcp_stats.duplicates;
+    }
     end = seq + size + ((flags & FIN) != 0) + ((flags & SYN) != 0);
     /* Reject segments outside the receive window; zero-window probes elicit
      * an ACK, and in-window RSTs must match RCV.NXT exactly. */
@@ -234,7 +250,7 @@ void rr_tcp_poll(uint16_t ticks)
     if (result == 2) return;
     if (result) { fail(RR_TCP_IO_ERROR); return; }
     if (!transmitted) { snd_nxt = snd_una + flight; transmitted = 1; }
-    else { ++retries; if (rto < 1800) rto *= 2; }
+    else { ++retries; ++rr_tcp_stats.retries; if (rto < 1800) rto *= 2; }
     deadline = ticks + rto;
     ack_pending = 0;
 }
@@ -254,7 +270,11 @@ int rr_tcp_read(uint8_t *buffer, uint16_t capacity)
     if (first > n) first = n;
     memcpy(buffer, rx + rx_head, first); memcpy(buffer + first, rx, n - first);
     rx_head = (rx_head + n) & (RR_TCP_RX_CAPACITY - 1); rx_count -= n;
-    if (n) ack_pending = 1;
+    /* Avoid a standalone window-update packet for every 128-byte render
+     * batch. Reopen after a segment's worth, or when the queue is drained.
+     * Incoming data still receives an immediate ACK with the current space. */
+    freed_since_ack += n;
+    if (n && (freed_since_ack >= RR_TCP_MSS || !rx_count)) ack_pending = 1;
     return (int)n;
 }
 void rr_tcp_close(uint16_t ticks)

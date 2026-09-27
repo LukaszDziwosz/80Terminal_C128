@@ -6,6 +6,7 @@
  * References/80Terminal_cc65/third_party/ip65/LICENSE.txt.
  */
 #include "ip65_ethernet.h"
+#include "platform.h"
 
 #ifndef RRNET_IP65_TEST
 #pragma code(rrcode)
@@ -69,16 +70,22 @@ void rrnet_ip65_eth_set_protocol(uint8_t protocol)
 
 uint8_t rrnet_ip65_eth_poll(void)
 {
+    uint8_t speed = platform_slow();
     rrnet_ip65_eth_in_length = rrnet_ip65_receive(
         rrnet_ip65_eth_in, RRNET_IP65_FRAME_CAPACITY);
+    platform_restore_speed(speed);
     return rrnet_ip65_eth_in_length >= RRNET_IP65_ETH_HEADER;
 }
 
 uint8_t rrnet_ip65_eth_send(void)
 {
+    uint8_t speed, result;
     if (rrnet_ip65_eth_out_length < RRNET_IP65_ETH_HEADER ||
         rrnet_ip65_eth_out_length > RRNET_IP65_FRAME_CAPACITY) return 1;
-    return rrnet_ip65_send(rrnet_ip65_eth_out, rrnet_ip65_eth_out_length);
+    speed = platform_slow();
+    result = rrnet_ip65_send(rrnet_ip65_eth_out, rrnet_ip65_eth_out_length);
+    platform_restore_speed(speed);
+    return result;
 }
 
 #ifndef RRNET_IP65_TEST
