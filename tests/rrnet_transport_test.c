@@ -20,7 +20,8 @@ static uint16_t input_size, output_size, ticks, client_port;
 static uint8_t send_error, speed, check_speed;
 static unsigned packets;
 static uint8_t repeated_frames;
-static unsigned slow_calls;
+/* volatile: Oscar64 -O2 otherwise caches this across the indirect b->poll(). */
+static volatile unsigned slow_calls;
 static uint32_t client_seq, server_seq;
 static const uint8_t own_ip[4] = {192,168,68,62};
 static const uint8_t gateway[4] = {192,168,68,1};

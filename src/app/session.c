@@ -5,14 +5,14 @@
 #include "platform.h"
 #include "keyboard.h"
 #include "ansi_terminal.h"
-#include <stdio.h>
 
-static char hostname[65];
-static char port_text[6] = "23";
+#pragma bss(lowbss)
 static uint8_t outgoing[1024], incoming[128];
+static char end_status[80];
+#pragma bss(bss)
 static uint16_t out_length, out_offset;
 static uint8_t out_overflow;
-static enum telnet_profile profile = TELNET_PROFILE_ANSI_80;
+static enum telnet_profile profile;
 
 static void line(uint8_t row, const char *s)
 {
@@ -29,24 +29,6 @@ static uint8_t wait_key(const struct net_backend *backend)
 {
     while (!platform_key_pending()) backend->poll();
     return getch();
-}
-static uint8_t edit(const struct net_backend *backend, uint8_t row,
-                    char *text, uint8_t capacity, uint8_t digits)
-{
-    uint8_t length = (uint8_t)strlen(text), key;
-    for (;;) {
-        line(row, text);
-        gotoxy((uint8_t)(3 + length), row); putch('_');
-        key = wait_key(backend);
-        if (cancelled(key)) return 0;
-        if (key == 10 || key == 13) return length != 0;
-        if (key == PETSCII_HOME) { length = 0; text[0] = 0; }
-        else if (key == PETSCII_DEL) { if (length) text[--length] = 0; }
-        else if (length < capacity && key >= 33 && key <= 126 &&
-                 (!digits || (key >= '0' && key <= '9'))) {
-            text[length++] = (char)key; text[length] = 0;
-        }
-    }
 }
 static void enqueue(const uint8_t *data, uint8_t length)
 {
@@ -81,6 +63,26 @@ static void shutdown(const struct net_backend *backend)
         while (backend->state() == NET_CLOSING) backend->poll();
     }
 }
+/* "Keys read: n   TCP bytes sent (incl. Telnet): n" without sprintf. */
+static char *decimal(char *out, uint16_t value)
+{
+    char digits[5];
+    uint8_t n = 0;
+    do { digits[n++] = (char)('0' + value % 10); value /= 10; } while (value);
+    while (n) *out++ = digits[--n];
+    return out;
+}
+static void counters(uint16_t keys, uint16_t sent)
+{
+    char text[60], *out = text;
+    const char *s;
+    for (s = "Keys read: "; *s; ) *out++ = *s++;
+    out = decimal(out, keys);
+    for (s = "   TCP bytes sent (incl. Telnet): "; *s; ) *out++ = *s++;
+    out = decimal(out, sent);
+    *out = 0;
+    line(7, text);
+}
 static void terminal(const struct net_backend *backend)
 {
     int count, sent;
@@ -92,8 +94,6 @@ static void terminal(const struct net_backend *backend)
     uint8_t cursor_pending = 0;
     uint8_t disconnected = 0;
     uint8_t ascii_mode = telnet_profile_is_ansi(profile);
-    char counters[64];
-    char end_status[80];
     out_length = out_offset = out_overflow = 0;
     telnet_init(profile, enqueue);
     if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), telnet_profile_is_vt100(profile))) {
@@ -165,50 +165,14 @@ static void terminal(const struct net_backend *backend)
     line(5, out_overflow ? "Transmit queue overflow; session stopped." :
          disconnected ? "Disconnected." : end_status);
     if (backend->state() == NET_FAILED) line(9, backend->status);
-    sprintf(counters, "Keys read: %u   TCP bytes sent (incl. Telnet): %u", key_count, tx_count);
-    line(7, counters);
+    counters(key_count, tx_count);
     line(20, "Press any key to return to the main screen.");
     line(21, "Then press F3 for a new connection, or F1 if the interface failed.");
     wait_key(backend);
 }
-void session_open(const struct net_backend *backend)
+void session_run(const struct net_backend *backend, const struct connect_request *request)
 {
-    uint32_t port;
-    uint8_t i, key;
-    /* A new transport session starts with an empty host. Do not retain an
-     * earlier BBS address in application RAM after returning to the launcher. */
-    hostname[0] = 0;
-    port_text[0] = '2'; port_text[1] = '3'; port_text[2] = 0;
-    clrscr();
-    line(2, backend->name);
-    line(5, backend->status);
-    line(18, "RUN/STOP or F7 cancels.");
-    if (!wait_ready(backend)) {
-        line(5, backend->status);
-        shutdown(backend);
-        return;
-    }
-    for (;;) {
-        clrscr();
-        line(2, backend->name);
-        line(4, "Hostname or IPv4 address:");
-        line(8, "Port (1-65535):");
-        line(18, "RETURN accepts each field. F7 cancels.");
-        if (!edit(backend, 5, hostname, 64, 0) || !edit(backend, 9, port_text, 5, 1)) {
-            shutdown(backend); return;
-        }
-        port = 0;
-        for (i = 0; port_text[i]; ++i) port = port * 10 + port_text[i] - '0';
-        if (port > 0 && port <= 65535) break;
-        line(14, "Invalid port. Press a key to try again."); wait_key(backend);
-    }
-    line(12, "1  ANSI 80x25       2  PETSCII 80x25       3  VT100 80x24");
-    line(14, "ANSI: CP437/color. VT100: DEC graphics and terminal controls.");
-    line(16, "During a session: F7 disconnects; CTRL-C goes to the host.");
-    do { key = wait_key(backend); if (cancelled(key)) { shutdown(backend); return; } }
-    while (key != '1' && key != '2' && key != '3');
-    profile = key == '1' ? TELNET_PROFILE_ANSI_80 :
-              key == '2' ? TELNET_PROFILE_PETSCII_80 : TELNET_PROFILE_VT100_80;
+    profile = request->profile;
     /* Some transports (WiC64) perform TCP open as one firmware request.
      * Draw this before starting it so a DNS or remote-connect wait is visible. */
     clrscr();
@@ -216,7 +180,7 @@ void session_open(const struct net_backend *backend)
     line(5, "Opening connection...");
     line(7, "Resolving host and waiting for the remote server.");
     line(18, "WiC64 opens are synchronous; this can take several seconds.");
-    if (backend->connect(hostname, (uint16_t)port) < 0) {
+    if (backend->connect(request->hostname, request->port) < 0) {
         line(10, backend->status);
         line(20, "Press any key to return to the main screen.");
         wait_key(backend); shutdown(backend); return;

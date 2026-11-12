@@ -11,3 +11,6 @@
 .DS_Store
 __pycache__/
 *.pyc
+
+# Local planning notes and references to private projects (not published)
+/docs/local/

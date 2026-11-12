@@ -3,86 +3,39 @@
 #else
 #include <conio.h>
 #endif
-#include <string.h>
 #include "program.h"
+#include "overlay.h"
 #include "session.h"
-#include "platform.h"
-#include "vdc_screen.h"
+#include "ui.h"
 
-static void line(uint8_t row, const char *text)
-{
-    uint8_t col = 0;
-    gotoxy(3, row);
-    while (*text && col < 73) { putch(*text++); ++col; }
-    while (col++ < 73) putch(' ');
-}
-static void draw_main(const struct net_backend *backend, uint8_t ready)
+#if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
+#pragma bss(lowbss)
+#endif
+static struct connect_request request;
+#if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
+#pragma bss(bss)
+#endif
+
+void program_message(const char *text)
 {
     clrscr();
-    line(2, "80Terminal / MAIN");
-    line(5, "Network interface:");
-    line(6, backend->name);
-    line(9, ready ? "Ready for a connection." : "Interface unavailable. F1 retries initialization.");
-    line(11, backend->status);
-    line(16, "F3  Terminal / connect");
-    line(18, "F7  CP437 font preview");
-    line(23, "F1 Retry interface     F3 Terminal     F7 Font     F8 Quit");
-}
-static uint8_t initialize(const struct net_backend *backend)
-{
-    int result;
-    char status[80];
-    line(9, "Initializing interface...");
-    result = backend->init();
-    line(11, backend->status);
-    strncpy(status, backend->status, sizeof(status) - 1);
-    status[sizeof(status) - 1] = 0;
-    if (result < 0) return 0;
-    /* NET_PENDING means the IO2 reset and network queries still need polling.
-     * Each backend enforces its own command deadlines. */
-    while (backend->state() == NET_INITIALIZING) {
-        backend->poll();
-        if (strncmp(status, backend->status, sizeof(status) - 1)) {
-            line(11, backend->status);
-            strncpy(status, backend->status, sizeof(status) - 1);
-        }
-    }
-    return backend->state() == NET_CLOSED;
+    gotoxy(3, 5);
+    while (*text) putch(*text++);
+    gotoxy(3, 18);
+    for (text = "Press any key to exit to BASIC."; *text; ) putch(*text++);
+    getch();
 }
 /* The launcher hands ownership to this program once. Sessions return here. */
 void program_run(const struct net_backend *backend)
 {
-    uint8_t key, ready;
-    char status[74];
-    draw_main(backend, 0);
-    ready = initialize(backend);
-    draw_main(backend, ready);
-    strncpy(status, backend->status, sizeof(status) - 1);
-    status[sizeof(status) - 1] = 0;
     for (;;) {
-        /* Keep DHCP lease timers and ARP alive while waiting at the menu. */
-        backend->poll();
-        if (ready != (backend->state() == NET_CLOSED)) {
-            ready = backend->state() == NET_CLOSED;
-            draw_main(backend, ready);
+        /* A session may have used the UI slot for a transfer overlay. */
+        if (!overlay_use(OVERLAY_UI_MAIN)) {
+            program_message("Could not load uimain. Use the complete disk image.");
+            break;
         }
-        if (strncmp(status, backend->status, sizeof(status) - 1)) {
-            line(11, backend->status);
-            strncpy(status, backend->status, sizeof(status) - 1);
-        }
-        if (!platform_key_pending()) continue;
-        key = getch();
-        if (key == PETSCII_F8 || key == 'q' || key == 'Q') break;
-        if (key == PETSCII_F1) {
-            backend->close();
-            while (backend->state() == NET_CLOSING) backend->poll();
-            ready = initialize(backend);
-        } else if (key == PETSCII_F3 && ready) {
-            session_open(backend);
-        } else if (key == PETSCII_F7) {
-            screen_font_preview(platform_device(), backend->poll);
-        } else continue;
-        draw_main(backend, ready);
+        if (ui_main(backend, &request) != UI_CONNECT) break;
+        session_run(backend, &request);
     }
     backend->close();
     while (backend->state() == NET_CLOSING) backend->poll();

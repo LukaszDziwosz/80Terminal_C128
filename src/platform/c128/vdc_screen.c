@@ -8,7 +8,9 @@
 #define VDC_INDEX (*(volatile uint8_t *)0xd600)
 #define VDC_DATA (*(volatile uint8_t *)0xd601)
 #ifndef VDC_TEST
+#pragma bss(lowbss)
 static uint8_t font_chunk[256];
+#pragma bss(bss)
 static uint8_t saved_font_reg;
 static uint8_t font_active;
 
@@ -84,6 +86,20 @@ void screen_set_cursor(uint16_t address, uint8_t visible)
                      (screen_reg_read(9) & 0x1f));
 }
 #ifndef VDC_TEST
+void screen_show(uint16_t chars, uint16_t attrs)
+{
+    /* The VDC reloads its display addresses once per frame, while blanked.
+     * Wait for the visible part of the frame: the next reload is then far
+     * away, so the four writes take effect in the same frame. Status bit 5
+     * is set during vertical blanking. */
+    while (VDC_INDEX & 0x20) {}
+    ready(); VDC_INDEX = 12; ready(); VDC_DATA = (uint8_t)(chars >> 8);
+    ready(); VDC_INDEX = 13; ready(); VDC_DATA = (uint8_t)chars;
+    ready(); VDC_INDEX = 20; ready(); VDC_DATA = (uint8_t)(attrs >> 8);
+    ready(); VDC_INDEX = 21; ready(); VDC_DATA = (uint8_t)attrs;
+}
+#endif
+#ifndef VDC_TEST
 void screen_restore_font(void)
 {
     if (!font_active) return;
@@ -126,31 +142,5 @@ uint8_t screen_load_cp437(uint8_t device)
     if (!ok) screen_restore_font();
     else screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
     return ok;
-}
-void screen_font_preview(uint8_t device, void (*idle)(void))
-{
-    uint16_t display, attributes, i;
-    uint8_t row;
-    clrscr();
-    if (!screen_load_cp437(device)) {
-        for (const char *s = "Could not load cp437font. Press a key."; *s; ++s)
-            putch(*s);
-        while (!platform_key_pending()) idle();
-        getch();
-        return;
-    }
-    display = ((uint16_t)screen_reg_read(12) << 8) | screen_reg_read(13);
-    attributes = ((uint16_t)screen_reg_read(20) << 8) | screen_reg_read(21);
-    screen_write_run(display + 163, (const uint8_t *)"CP437 - 256 glyphs. Press any key to return.", 42);
-    for (i = 0; i < 256; ++i) font_chunk[i] = (uint8_t)i;
-    for (row = 0; row < 8; ++row)
-        screen_write_run(display + (uint16_t)(row + 5) * 80 + 3,
-                         font_chunk + (uint16_t)row * 32, 32);
-    for (i = 0; i < 256; ++i) font_chunk[i] = 0x0f;
-    for (row = 0; row < 25; ++row)
-        screen_write_run(attributes + (uint16_t)row * 80, font_chunk, 80);
-    while (!platform_key_pending()) idle();
-    getch();
-    screen_restore_font();
 }
 #endif

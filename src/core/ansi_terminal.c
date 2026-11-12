@@ -19,7 +19,14 @@
 #define ST_STRING 3
 #define ST_STRING_ESC 4
 
-static uint16_t chars, attrs;
+/* Two page pairs: the visible one (chars/attrs) and a hidden one, where
+ * scrolls are built before the display switches to it. Characters and
+ * attributes therefore always change together on screen. In ANSI mode the
+ * attribute's bit 7 selects the font half, so a moved graphics character
+ * under an old attribute would show as an ASCII digit or symbol. */
+#define PAGE_FLIP 0x1000
+#define CELLS 2000
+static uint16_t chars, attrs, original_chars, original_attrs;
 static uint8_t x, y, saved_x, saved_y, state, params[8], count, private_mark;
 static uint8_t attr, wrap, autowrap, cursor_visible, application_cursor;
 static uint8_t newline_mode, scroll_top, scroll_bottom;
@@ -104,30 +111,48 @@ static void clear_screen(uint8_t first, uint8_t last)
     screen_fill_run(address(0, first), 0x20, (uint16_t)(last - first + 1) * W);
     screen_fill_run(attr_address(0, first), attr | 0x80, (uint16_t)(last - first + 1) * W);
 }
+/* Copy rows from the visible page to the same or another row of the hidden one. */
+static void copy_rows(uint8_t to, uint8_t from, uint8_t rows)
+{
+    uint16_t length = (uint16_t)rows * W;
+    if (!rows) return;
+    screen_copy_run((chars ^ PAGE_FLIP) + (uint16_t)to * W, chars + (uint16_t)from * W, length);
+    screen_copy_run((attrs ^ PAGE_FLIP) + (uint16_t)to * W, attrs + (uint16_t)from * W, length);
+}
+static void blank_hidden_rows(uint8_t first, uint8_t rows)
+{
+    uint16_t length = (uint16_t)rows * W;
+    screen_fill_run((chars ^ PAGE_FLIP) + (uint16_t)first * W, 0x20, length);
+    screen_fill_run((attrs ^ PAGE_FLIP) + (uint16_t)first * W, attr | 0x80, length);
+}
+/* Rows outside the scroll region, including VT100's blank 25th row, are
+ * copied unchanged; then the hidden page becomes the visible one. */
+static void finish_scroll(uint8_t top, uint8_t bottom)
+{
+    copy_rows(0, 0, top);
+    copy_rows((uint8_t)(bottom + 1), (uint8_t)(bottom + 1), (uint8_t)(CELLS / W - 1 - bottom));
+    chars ^= PAGE_FLIP; attrs ^= PAGE_FLIP;
+    screen_show(chars, attrs);
+    cursor();
+}
 static void scroll_up(uint8_t top, uint8_t bottom, uint8_t lines)
 {
-    uint16_t length;
+    uint8_t rows = (uint8_t)(bottom - top + 1);
     if (!lines) lines = 1;
-    if (lines > bottom - top + 1) lines = bottom - top + 1;
-    length = (uint16_t)(bottom - top + 1 - lines) * W;
-    if (length) {
-        screen_copy_run(address(0, top), address(0, top + lines), length);
-        screen_copy_run(attr_address(0, top), attr_address(0, top + lines), length);
-    }
-    clear_screen((uint8_t)(bottom - lines + 1), bottom);
+    if (lines > rows) lines = rows;
+    copy_rows(top, (uint8_t)(top + lines), (uint8_t)(rows - lines));
+    blank_hidden_rows((uint8_t)(bottom - lines + 1), lines);
+    finish_scroll(top, bottom);
 }
-/* VDC block copies run forwards. Copy bottom rows first when moving down. */
 static void scroll_down(uint8_t top, uint8_t bottom, uint8_t lines)
 {
-    uint8_t row;
+    uint8_t rows = (uint8_t)(bottom - top + 1);
     if (!lines) lines = 1;
-    if (lines > bottom - top + 1) lines = bottom - top + 1;
-    for (row = bottom + 1; row > top + lines;) {
-        --row;
-        screen_copy_run(address(0, row), address(0, row - lines), W);
-        screen_copy_run(attr_address(0, row), attr_address(0, row - lines), W);
-    }
-    clear_screen(top, top + lines - 1);
+    if (lines > rows) lines = rows;
+    /* Different pages, so one forward block copy is safe for any direction. */
+    copy_rows((uint8_t)(top + lines), top, (uint8_t)(rows - lines));
+    blank_hidden_rows(top, lines);
+    finish_scroll(top, bottom);
 }
 static void edit_characters(uint8_t n, uint8_t insert)
 {
@@ -284,16 +309,26 @@ static void csi(uint8_t final)
 uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t vt100_mode)
 {
     if (!screen_load_cp437(device)) return 0;
-    chars = ((uint16_t)screen_reg_read(12) << 8) | screen_reg_read(13);
-    attrs = ((uint16_t)screen_reg_read(20) << 8) | screen_reg_read(21);
+    original_chars = ((uint16_t)screen_reg_read(12) << 8) | screen_reg_read(13);
+    original_attrs = ((uint16_t)screen_reg_read(20) << 8) | screen_reg_read(21);
+    /* KERNAL 80-column pages: $0000/$0800, with $1000/$1800 free below the
+     * fonts at $2000. Start on the low pair whatever the editor used. */
+    chars = original_chars & ~PAGE_FLIP; attrs = original_attrs & ~PAGE_FLIP;
+    screen_show(chars, attrs);
     send_bytes = send; vt100_enabled = vt100_mode; height = vt100_mode ? 24 : 25;
     state = ST_TEXT; reset_state(); batch_update = 1;
     screen_set_cursor(address(x, y), 0);
     /* Clear the physical 25th row too; VT100 never renders into it. */
-    screen_fill_run(chars, ' ', 2000); screen_fill_run(attrs, attr | 0x80, 2000);
+    screen_fill_run(chars, ' ', CELLS); screen_fill_run(attrs, attr | 0x80, CELLS);
     return 1;
 }
-void ansi_terminal_shutdown(void) { screen_set_cursor(address(x, y), 0); screen_restore_font(); }
+void ansi_terminal_shutdown(void)
+{
+    screen_set_cursor(address(x, y), 0);
+    /* The KERNAL screen editor writes to its own page: show that again. */
+    screen_show(original_chars, original_attrs);
+    screen_restore_font();
+}
 void ansi_terminal_receive(uint8_t value)
 {
     if (value == ESC && state != ST_STRING && state != ST_STRING_ESC) {

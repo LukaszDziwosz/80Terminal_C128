@@ -4,9 +4,13 @@
 #include <string.h>
 #include "ansi_terminal.h"
 
-static uint8_t vdc[16384], sent[32], sent_length, restored;
-static uint16_t cursor_address;
-static uint8_t cursor_visible;
+/* VDC RAM, and the page the display currently shows: tests read the
+ * visible screen through vdc[], with attributes at vdc[0x800 + n]. */
+static uint8_t ram[16384], sent[32], sent_length, restored;
+static uint8_t *vdc = ram;
+static uint16_t shown_chars, shown_attrs, cursor_address;
+static uint8_t cursor_visible, watch_visible;
+static unsigned flips, visible_writes;
 
 uint8_t screen_load_cp437(uint8_t device) { return device == 8; }
 void screen_restore_font(void) { ++restored; }
@@ -16,17 +20,31 @@ uint8_t screen_reg_read(uint8_t reg)
     return 0;
 }
 void screen_reg_write(uint8_t reg, uint8_t value) { (void)reg; (void)value; }
+static void track(uint16_t at, uint16_t length)
+{
+    /* A write into the displayed page while a scroll is being built. */
+    if (!watch_visible) return;
+    if ((at < shown_chars + 2000 && at + length > shown_chars) ||
+        (at < shown_attrs + 2000 && at + length > shown_attrs)) ++visible_writes;
+}
 void screen_write_run(uint16_t at, const uint8_t *data, uint16_t length)
-{ memcpy(vdc + at, data, length); }
+{ track(at, length); memcpy(ram + at, data, length); }
 void screen_fill_run(uint16_t at, uint8_t value, uint16_t length)
-{ memset(vdc + at, value, length); }
+{ track(at, length); memset(ram + at, value, length); }
 void screen_copy_run(uint16_t destination, uint16_t source, uint16_t length)
 {
     /* Match real VDC forward-only block copies, not host memmove. */
-    while (length--) vdc[destination++] = vdc[source++];
+    track(destination, length);
+    while (length--) ram[destination++] = ram[source++];
+}
+void screen_show(uint16_t chars, uint16_t attrs)
+{
+    assert(attrs == chars + 0x800);
+    shown_chars = chars; shown_attrs = attrs; vdc = ram + chars;
+    watch_visible = 0; ++flips;
 }
 void screen_set_cursor(uint16_t at, uint8_t visible)
-{ cursor_address = at; cursor_visible = visible; }
+{ cursor_address = (uint16_t)(at - shown_chars); cursor_visible = visible; }
 static void send(const uint8_t *data, uint8_t length)
 { memcpy(sent + sent_length, data, length); sent_length += length; }
 static void feed(const char *text)
@@ -126,6 +144,50 @@ static void test_editing_and_wrap(void)
     ansi_terminal_shutdown();
 }
 
+/* Scrolls are built on the hidden page: the visible one is never written
+ * until the display switches, so characters and their attributes (whose
+ * bit 7 selects the CP437 font half) always change in the same frame. */
+static void test_scroll_page_flip(void)
+{
+    unsigned before;
+    uint16_t i;
+    uint8_t red;
+    start(0);
+    /* Row 2 (index 1): shade blocks B0-B2, stored as $30-$32 with bit 7 clear. */
+    feed("\033[2;1H\xb0\xb1\xb2\033[1;31mX\033[0m");
+    assert(vdc[80] == 0x30 && vdc[81] == 0x31 && vdc[82] == 0x32 && !(vdc[0x800 + 80] & 0x80));
+    assert(vdc[83] == 'X' && (vdc[0x800 + 83] & 0x80));
+    red = vdc[0x800 + 83];
+    assert(red != vdc[0x800 + 80]);
+    feed("\033[25;1HBottom");
+    before = flips; watch_visible = 1; visible_writes = 0;
+    feed("\n");
+    assert(flips == before + 1 && visible_writes == 0);
+    /* Everything moved up one row, attributes with their characters. */
+    assert(vdc[0] == 0x30 && vdc[1] == 0x31 && vdc[2] == 0x32 && !(vdc[0x800] & 0x80));
+    assert(vdc[3] == 'X' && vdc[0x800 + 3] == red);
+    assert(vdc[23 * 80] == 'B');
+    for (i = 24 * 80; i < 2000; ++i) assert(vdc[i] == ' ' && (vdc[0x800 + i] & 0x80));
+    /* The cursor follows the newly visible page. */
+    ansi_terminal_end_update();
+    assert(cursor_address == 24 * 80 + 6 && cursor_visible);
+    /* Reverse index at the top and insert-line also flip, never tear. */
+    ansi_terminal_begin_update();
+    before = flips; watch_visible = 1; visible_writes = 0;
+    feed("\033[1;1H\033M");
+    assert(flips == before + 1 && visible_writes == 0);
+    assert(vdc[0] == ' ' && vdc[80] == 0x30 && !(vdc[0x800 + 80] & 0x80) && vdc[24 * 80] == 'B');
+    watch_visible = 1; visible_writes = 0;
+    feed("\033[3;1H\033[2L");
+    assert(flips == before + 2 && visible_writes == 0);
+    assert(vdc[80] == 0x30 && vdc[160] == ' ' && vdc[240] == ' ' && vdc[24 * 80] == ' ');
+    /* Margins: rows outside the region are copied across unchanged. */
+    feed("\033[2J\033[1;1HTop\033[25;1HEnd\033[5;10r\033[10;1HIn\n");
+    assert(vdc[0] == 'T' && vdc[24 * 80] == 'E' && vdc[8 * 80] == 'I' && vdc[9 * 80] == ' ');
+    ansi_terminal_shutdown();
+    /* The KERNAL's own page is visible again for the screen editor. */
+    assert(shown_chars == 0 && shown_attrs == 0x800);
+}
 int main(void)
 {
     uint8_t key[5];
@@ -168,6 +230,7 @@ int main(void)
     test_margins_and_reverse_index();
     test_tabs_modes_and_reset();
     test_editing_and_wrap();
+    test_scroll_page_flip();
     puts("ANSI and VT100 terminal parser tests passed");
     return 0;
 }

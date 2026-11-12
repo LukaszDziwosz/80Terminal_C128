@@ -3,9 +3,10 @@
 Oscar64 terminal for the Commodore 128's 80-column display. The launcher loads
 one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 
-Device selection is a one-time launch step. The selected adapter stays loaded
+Device selection is a one-time launch step: F1 RR-Net, F3 Ultimate II+,
+F5 WiC64, F8 back to BASIC. The selected adapter stays loaded
 while the shared main screen owns connections: F3 opens the terminal, F1 retries
-interface initialization, F7 previews the font, and F8 exits to BASIC. Cancelling
+interface initialization, and F8 exits to BASIC. Cancelling
 or disconnecting returns to this main screen. The implementation uses a resident
 shared program with a selected adapter overlay; it does not yet package three
 standalone executables. The shared phonebook data core is present; its UI is
@@ -49,6 +50,13 @@ there is no suspended session to resume. **F1** retries a failed interface.
 The VIC display stays blank during operation at 2 MHz, including temporary
 1 MHz cartridge accesses, and its display setting is restored on exit.
 
+The launcher, main screen and connect form are the `uimain`
+overlay, in a UI slot at `$5000-$5fff`. It is loaded from disk once and
+kept in C128 RAM bank 1; later loads copy it back from there with the
+KERNAL's INDFET routine. The connection, Telnet and terminal code stay
+resident, as do large buffers in the free `$1300-$1bff` area. The memory
+map is in `include/memory_map.h` and `include/bank1.h`.
+
 Adapter buffers share the reserved `$6000-$7fff` RAM area. Ultimate's buffers
 use this area alongside the existing RR-Net/WiC64 alternatives, leaving room
 for the shared terminal parser. Only the selected adapter uses these buffers;
@@ -79,8 +87,8 @@ enable the interface in the Ultimate menu and press **F1** to retry.
 RR-Net initialization requests an address, subnet mask and gateway via DHCP.
 DNS is overridden to `1.1.1.1` after each accepted lease. The status line shows
 the assigned IP, or reports a timeout after 60 seconds with sent, received
-Ethernet-frame and DHCP-reply counts. F1 retries. Lease timers run during menu,
-font preview and input waits. DHCP and terminal connections are validated on
+Ethernet-frame and DHCP-reply counts. F1 retries. Lease timers run during menu
+and input waits. DHCP and terminal connections are validated on
 the real adapter.
 Connections accept a hostname or dotted IPv4 address. The TCP client uses a
 536-byte MSS, a 2 KB receive queue, retransmission and flow control.
@@ -90,8 +98,11 @@ if available, or `oscar64` from PATH. The pinned compiler revision is recorded
 in `tools/oscar64-revision.txt`.
 
 ```
-make all test test-oscar
+make all test test-oscar test-vice
 ```
+
+`make test-vice` boots the disk in x128 and checks the launcher, the bank-1
+overlay copy, restoring the main screen from it, and the exit to BASIC.
 
 Boot `build/terminal80.d64` in C128 mode. Keep the adapter files on the disk.
 `make run` starts VICE in 80-column mode. CPU tests do not emulate WiC64 hardware.

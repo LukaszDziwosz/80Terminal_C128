@@ -1,11 +1,22 @@
 #ifndef T80_LAYOUT_H
 #define T80_LAYOUT_H
-/* Initial budget, to be revisited after the RR-Net stack spike.
+/* Bank 0 budget; addresses are in memory_map.h.
  * Oscar overlay bank numbers are disk overlays, NOT C128 RAM banks. */
 #pragma stacksize(512)
 /* All application buffers are static; do not reserve an unused 1 KB heap. */
 #pragma heapsize(0)
-#pragma region(main, 0x1c80, 0x6000, , , {code, data, bss, heap})
+#include "memory_map.h"
+/* Low C128 RAM, BSS only: large resident buffers and UI overlay state. */
+#pragma section(lowbss, 0, , , bss)
+#pragma section(uibss, 0, , , bss)
+#pragma region(lowram, LOWBSS_START, LOWBSS_END, , , {lowbss, uibss})
+#pragma region(main, MAIN_START, UI_SLOT_START, , , {code, data, bss, heap})
+/* UI overlays (include/overlay.h) share this slot and are cached in bank 1.
+ * Each one is its own Oscar64 overlay; their BSS is uibss, not the file. */
+#pragma overlay(uimain, 4)
+#pragma section(uicode, 0)
+#pragma section(uidata, 0)
+#pragma region(uislot, UI_SLOT_START, UI_SLOT_END, , 4, {uicode, uidata})
 /* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;
  * RR-Net and Ultimate use the same RAM for their buffers. Only one is loaded. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})
