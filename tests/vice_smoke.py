@@ -268,8 +268,12 @@ def check(m, labels, mm, shots=None):
         m.capture(shots / 'phonebook.png')
     print('PASS: a board added in the editor is listed and saved', flush=True)
 
-    type_keys(m, bytes([0x88]))  # F7: back to the main screen
-    wait_text(m, 'Recent connections')
+    # RETURN dials the selected board. With no adapter emulated the open is
+    # abandoned and the main screen returns; the phonebook must not stay up.
+    type_keys(m, b'\r')
+    rows = wait_text(m, 'Recent connections')
+    assert 'Main' in rows[0], rows[0]
+    print('PASS: RETURN in the phonebook dials the selected board', flush=True)
     m.keys(bytes([0x8c]))  # F8
     m.resume()
     wait_text(m, 'ready.', ignore_case=True)

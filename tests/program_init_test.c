@@ -59,7 +59,8 @@ char getch(void)
         ++summaries;
     }
     assert(key_index < script_length);
-    return (char)script[key_index++];
+    /* Like Oscar64's conio getch(): RETURN arrives as 10, not 13. */
+    return script[key_index] == 13 ? (++key_index, (char)10) : (char)script[key_index++];
 }
 uint8_t platform_device(void) { return 8; }
 uint8_t platform_key_pending(void) { return idle_polls > 0; }

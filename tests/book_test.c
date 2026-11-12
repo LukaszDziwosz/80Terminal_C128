@@ -46,7 +46,8 @@ static int anywhere(const char *text)
 /* ---- Keyboard ---- */
 static const char *script;
 static int script_at;
-char getch(void) { assert(script[script_at]); return script[script_at++]; }
+/* Like Oscar64's conio getch(): RETURN arrives as 10, not 13. */
+char getch(void) { char c; assert(script[script_at]); c = script[script_at++]; return c == 13 ? 10 : c; }
 void clrscr(void) {}
 void gotoxy(char x, char y) { (void)x; (void)y; }
 void putch(char c) { (void)c; }

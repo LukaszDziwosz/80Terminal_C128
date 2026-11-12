@@ -297,6 +297,8 @@ static uint8_t cancelled(uint8_t key)
 {
     return key == PETSCII_STOP || key == PETSCII_F7 || key == 27;
 }
+/* Oscar64's getch() returns RETURN as 10 ('\n'), not 13. */
+static uint8_t is_return(uint8_t key) { return key == 10 || key == 13; }
 static uint8_t wait_key(const struct net_backend *backend)
 {
     while (!platform_key_pending()) backend->poll();
@@ -370,7 +372,7 @@ static uint8_t edit(const struct net_backend *backend, uint8_t row, uint8_t widt
         ui_text_field((uint8_t)(16 + length - start), row, 1, "", UI_BAR);
         key = wait_key(backend);
         if (cancelled(key)) return 0;
-        if (key == 10 || key == 13) {
+        if (is_return(key)) {
             ui_text_field(16, row, width, value + start, UI_HEADING);
             return length != 0;
         }
@@ -431,7 +433,7 @@ static uint8_t edit_entry(const struct net_backend *backend, const char *heading
         if (key == '1') entry.profile = TELNET_PROFILE_ANSI_80;
         else if (key == '2') entry.profile = TELNET_PROFILE_PETSCII_80;
         else if (key == '3') entry.profile = TELNET_PROFILE_VT100_80;
-        else if (key != 13) continue;
+        else if (!is_return(key)) continue;
         return 1;
     }
 }
@@ -459,7 +461,7 @@ BOOK_ENTRY uint8_t book_run(const struct net_backend *backend, struct connect_re
             i = selected; move_selection((uint8_t)(selected + 1));
             if (top != old_top) draw_list();
             else { draw_row((uint8_t)(i - top)); draw_row((uint8_t)(selected - top)); }
-        } else if (key == 13 && book.count) {
+        } else if (is_return(key) && book.count) {
             get(BANK1_PHONEBOOK, selected, &entry);
             strcpy(request->name, entry.name);
             strcpy(request->hostname, entry.hostname);
