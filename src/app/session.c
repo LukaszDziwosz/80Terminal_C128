@@ -6,6 +6,11 @@
 #include "keyboard.h"
 #include "ansi_terminal.h"
 
+#ifdef T80_APP
+/* Part of the uiterm overlay (overlay.h): only needed during a session. */
+#pragma code(termcode)
+#pragma data(termdata)
+#endif
 #pragma bss(lowbss)
 static uint8_t outgoing[1024], incoming[128];
 static char end_status[80];
@@ -14,21 +19,17 @@ static uint16_t out_length, out_offset;
 static uint8_t out_overflow;
 static enum telnet_profile profile;
 
+/* Status text at column 5, inside the UI's panels (see draw.h). */
 static void line(uint8_t row, const char *s)
 {
     uint8_t col = 0;
-    gotoxy(3, row);
-    while (s[col] && col < 73) putch(s[col++]);
-    while (col++ < 73) putch(' ');
+    gotoxy(5, row);
+    while (s[col] && col < 71) putch(s[col++]);
+    while (col++ < 71) putch(' ');
 }
 static uint8_t cancelled(uint8_t key)
 {
     return key == PETSCII_STOP || key == PETSCII_F7 || key == 27;
-}
-static uint8_t wait_key(const struct net_backend *backend)
-{
-    while (!platform_key_pending()) backend->poll();
-    return getch();
 }
 static void enqueue(const uint8_t *data, uint8_t length)
 {
@@ -44,16 +45,17 @@ static void ansi_send_terminal(const uint8_t *data, uint8_t length)
 {
     while (length--) telnet_send_byte(*data++);
 }
+/* Returns 0 only if the user cancelled; otherwise the open has finished,
+ * successfully or not (see backend->state()). */
 static uint8_t wait_ready(const struct net_backend *backend)
 {
-    enum net_state state;
+    int state;
     for (;;) {
         backend->poll();
         state = backend->state();
-        if (state != NET_INITIALIZING && state != NET_CONNECTING) break;
+        if (state != NET_INITIALIZING && state != NET_CONNECTING) return 1;
         if (cancelled(getchx())) return 0;
     }
-    return state == NET_CLOSED || state == NET_CONNECTED;
 }
 static void shutdown(const struct net_backend *backend)
 {
@@ -63,27 +65,12 @@ static void shutdown(const struct net_backend *backend)
         while (backend->state() == NET_CLOSING) backend->poll();
     }
 }
-/* "Keys read: n   TCP bytes sent (incl. Telnet): n" without sprintf. */
-static char *decimal(char *out, uint16_t value)
+static void copy_text(char *to, const char *from)
 {
-    char digits[5];
-    uint8_t n = 0;
-    do { digits[n++] = (char)('0' + value % 10); value /= 10; } while (value);
-    while (n) *out++ = digits[--n];
-    return out;
+    strncpy(to, from, 79);
+    to[79] = 0;
 }
-static void counters(uint16_t keys, uint16_t sent)
-{
-    char text[60], *out = text;
-    const char *s;
-    for (s = "Keys read: "; *s; ) *out++ = *s++;
-    out = decimal(out, keys);
-    for (s = "   TCP bytes sent (incl. Telnet): "; *s; ) *out++ = *s++;
-    out = decimal(out, sent);
-    *out = 0;
-    line(7, text);
-}
-static void terminal(const struct net_backend *backend)
+static void terminal(const struct net_backend *backend, struct session_result *result)
 {
     int count, sent;
     uint16_t i;
@@ -97,9 +84,10 @@ static void terminal(const struct net_backend *backend)
     out_length = out_offset = out_overflow = 0;
     telnet_init(profile, enqueue);
     if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), telnet_profile_is_vt100(profile))) {
-        clrscr();
-        line(5, "Could not load CP437 font from the boot disk.");
-        getch();
+        result->outcome = SESSION_ENDED;
+        copy_text(result->message, "Could not load CP437 font from the boot disk.");
+        result->detail[0] = 0;
+        result->keys = result->sent = 0;
         return;
     }
     if (!ascii_mode) {
@@ -161,34 +149,37 @@ static void terminal(const struct net_backend *backend)
     strncpy(end_status, backend->status, sizeof(end_status) - 1);
     end_status[sizeof(end_status) - 1] = 0;
     shutdown(backend);
-    line(22, "");
-    line(5, out_overflow ? "Transmit queue overflow; session stopped." :
-         disconnected ? "Disconnected." : end_status);
-    if (backend->state() == NET_FAILED) line(9, backend->status);
-    counters(key_count, tx_count);
-    line(20, "Press any key to return to the main screen.");
-    line(21, "Then press F3 for a new connection, or F1 if the interface failed.");
-    wait_key(backend);
+    result->outcome = SESSION_ENDED;
+    copy_text(result->message, out_overflow ? "Transmit queue overflow; session stopped." :
+              disconnected ? "Disconnected." : end_status);
+    copy_text(result->detail, backend->state() == NET_FAILED ? backend->status : "");
+    result->keys = key_count;
+    result->sent = tx_count;
 }
-void session_run(const struct net_backend *backend, const struct connect_request *request)
+__noinline void session_run(const struct net_backend *backend, const struct connect_request *request,
+                             struct session_result *result)
 {
     profile = request->profile;
-    /* Some transports (WiC64) perform TCP open as one firmware request.
-     * Draw this before starting it so a DNS or remote-connect wait is visible. */
-    clrscr();
-    line(2, backend->name);
-    line(5, "Opening connection...");
-    line(7, "Resolving host and waiting for the remote server.");
-    line(18, "WiC64 opens are synchronous; this can take several seconds.");
+    result->outcome = SESSION_NONE;
+    /* The UI has drawn the "Connecting" screen. Some transports (WiC64)
+     * open TCP in one firmware request, so it is visible during the wait. */
     if (backend->connect(request->hostname, request->port) < 0) {
-        line(10, backend->status);
-        line(20, "Press any key to return to the main screen.");
-        wait_key(backend); shutdown(backend); return;
+        result->outcome = SESSION_CONNECT_FAILED;
+        copy_text(result->message, backend->status);
+        shutdown(backend);
+        return;
     }
-    clrscr();
-    line(5, backend->status);
-    line(18, "RUN/STOP or F7 cancels; pending open is closed when it completes.");
-    if (wait_ready(backend) && backend->state() == NET_CONNECTED) terminal(backend);
-    else line(5, backend->status);
+    line(SESSION_STATUS_ROW, backend->status);
+    if (wait_ready(backend)) {
+        if (backend->state() == NET_CONNECTED) terminal(backend, result);
+        else {
+            result->outcome = SESSION_CONNECT_FAILED;
+            copy_text(result->message, backend->status);
+        }
+    }
     shutdown(backend);
 }
+#ifdef T80_APP
+#pragma code(code)
+#pragma data(data)
+#endif

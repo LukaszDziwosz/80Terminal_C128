@@ -9,6 +9,11 @@
 #pragma optimize(push, size, outline)
 #endif
 
+#ifdef T80_APP
+/* Part of the uiterm overlay (overlay.h): only needed during a session. */
+#pragma code(termcode)
+#pragma data(termdata)
+#endif
 #define W 80
 #define H height
 #define ST_CHARSET 5
@@ -386,4 +391,8 @@ uint8_t ansi_terminal_key(uint8_t key, uint8_t *out)
 }
 #ifdef __OSCAR64C__
 #pragma optimize(pop)
+#endif
+#ifdef T80_APP
+#pragma code(code)
+#pragma data(data)
 #endif

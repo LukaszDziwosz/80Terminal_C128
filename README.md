@@ -4,13 +4,35 @@ Oscar64 terminal for the Commodore 128's 80-column display. The launcher loads
 one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 
 Device selection is a one-time launch step: F1 RR-Net, F3 Ultimate II+,
-F5 WiC64, F8 back to BASIC. The selected adapter stays loaded
-while the shared main screen owns connections: F3 opens the terminal, F1 retries
-interface initialization, and F8 exits to BASIC. Cancelling
-or disconnecting returns to this main screen. The implementation uses a resident
-shared program with a selected adapter overlay; it does not yet package three
-standalone executables. The shared phonebook data core is present; its UI is
-still to be ported.
+F5 WiC64, F8 back to BASIC. The selected adapter stays loaded while the main
+screen owns connections: F1 retries interface initialization, F3 connects by
+address, F5 opens the phonebook, keys 1-9 dial a recent connection, and F8
+exits to BASIC. Cancelling or disconnecting returns to the main screen, after
+a summary of the session.
+
+## Phonebook
+
+The phonebook holds up to 50 boards: F1 adds, F3 edits, F5 deletes, RETURN
+dials, and the cursor keys select. The nine most recent connections are
+listed on the main screen. Both are plain ASCII text files on the boot disk,
+`phonebook` and `recent`, so a phonebook can be shared on a BBS, downloaded
+to another disk, or edited on any computer:
+
+```
+80TPB 1
+# comment lines start with #
+LukasSoft BBS|bbs.lukassoft.com|48822|ansi80
+```
+
+Each line is `name|host|port|mode`, with CR, LF or CRLF line endings. Modes
+are `petscii80`, `ansi80` and `vt100`; `petscii40`, `amiga80` and `ascii80`
+from the 80Terminal mobile app are read as their nearest 80-column mode, and
+other modes are skipped. Names are up to 24 characters and hosts up to 64.
+Fields after the mode are ignored, so later versions can add some. Saving
+writes `phonebook.new` first and then replaces `phonebook`, so a full disk
+never loses the previous file; comments are not kept when the C128 saves.
+Recent connections are a separate file, so sharing a phonebook never shares
+call history. The disk image starts with `assets/phonebook.txt`.
 
 ## Current baseline
 
@@ -50,12 +72,16 @@ there is no suspended session to resume. **F1** retries a failed interface.
 The VIC display stays blank during operation at 2 MHz, including temporary
 1 MHz cartridge accesses, and its display setting is restored on exit.
 
-The launcher, main screen and connect form are the `uimain`
-overlay, in a UI slot at `$5000-$5fff`. It is loaded from disk once and
-kept in C128 RAM bank 1; later loads copy it back from there with the
-KERNAL's INDFET routine. The connection, Telnet and terminal code stay
-resident, as do large buffers in the free `$1300-$1bff` area. The memory
-map is in `include/memory_map.h` and `include/bank1.h`.
+The screens and the session take turns in one slot at `$3600-$5fff`, as
+three overlays: `uimain` (launcher, main screen, connect form, summary),
+`uibook` (phonebook and recent connections) and `uiterm` (connection,
+Telnet session and the ANSI/VT100/PETSCII terminal). Each is loaded from
+disk once and kept in C128 RAM bank 1 at its real length; later switches
+copy it back with the KERNAL's INDFET routine. Bank 1 also holds the
+phonebook and recent list. The resident program (platform, adapters'
+interface, Telnet, overlay loader) ends near `$3240`; its variables use the
+free `$1300-$1bff` area and the overlays' variables `$0b00-$0fff`. The
+memory map is in `include/memory_map.h` and `include/bank1.h`.
 
 Adapter buffers share the reserved `$6000-$7fff` RAM area. Ultimate's buffers
 use this area alongside the existing RR-Net/WiC64 alternatives, leaving room
@@ -101,8 +127,10 @@ in `tools/oscar64-revision.txt`.
 make all test test-oscar test-vice
 ```
 
-`make test-vice` boots the disk in x128 and checks the launcher, the bank-1
-overlay copy, restoring the main screen from it, and the exit to BASIC.
+`make test-vice` boots a copy of the disk in x128 and checks the launcher,
+the bank-1 overlay copies, the phonebook (adding a board and the saved text
+file), and the exit to BASIC. `python3 tests/vice_smoke.py --screenshots`
+also saves the screens to `build/screens/`.
 
 Boot `build/terminal80.d64` in C128 mode. Keep the adapter files on the disk.
 `make run` starts VICE in 80-column mode. CPU tests do not emulate WiC64 hardware.

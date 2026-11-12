@@ -4,14 +4,15 @@
 Driven through VICE's binary monitor; no third-party Python modules.
 Run from the project root after `make`: python3 tests/vice_smoke.py
 
-Checks:
- 1. The launcher (from the uimain overlay) appears on the VDC screen.
- 2. The overlay's bank-1 copy matches the slot in bank 0 (KERNAL INDSTA).
- 3. With the slot wiped and the overlay marked unloaded, choosing an
-    adapter brings the main screen back from bank 1 (KERNAL INDFET),
-    not from disk.
- 4. With no adapter emulated, the main screen reports it unavailable,
-    and F8 returns to BASIC with the 2 MHz/VIC settings restored.
+Checks, on a copy of the disk:
+ 1. The launcher (uimain overlay) draws its amber bars on a black screen,
+    and its bank-1 copy matches the slot (KERNAL INDSTA).
+ 2. Choosing an adapter loads the phonebook overlay, then brings the main
+    screen back from bank 1 (KERNAL INDFET); with no adapter emulated it
+    reports the interface unavailable.
+ 3. F5 lists the disk's phonebook file; a board added in the editor is
+    saved, and the D64 then holds the expected text file.
+ 4. F8 returns to BASIC.
 """
 import argparse
 import socket
@@ -19,6 +20,7 @@ import struct
 import subprocess
 import sys
 import time
+import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -112,6 +114,36 @@ class Monitor:
                 return struct.unpack_from('<H', data)[0]
         raise TimeoutError('no checkpoint hit')
 
+    def vdc_register(self, reg):
+        self.write(0xd600, bytes([reg]), 'io')
+        return self.memory(0xd601, 1, 'io')[0]
+
+    def capture(self, filename):
+        """Save the emulated display as an indexed PNG."""
+        data = self.cmd(0x84, b'\0\0')
+        info_len = struct.unpack_from('<I', data)[0]
+        w, h = struct.unpack_from('<HH', data, 12)
+        offset = 4 + info_len
+        size = struct.unpack_from('<I', data, offset)[0]
+        pixels = data[offset + 4:offset + 4 + size]
+        if len(pixels) == size - 4:
+            pixels += pixels[-1:] * 4  # VICE 3.10 omits four final border pixels.
+        assert len(pixels) == w * h
+        pal = self.cmd(0x91, b'\0')
+        palette, pos = bytearray(), 2
+        for _ in range(struct.unpack_from('<H', pal)[0]):
+            length = pal[pos]
+            palette.extend(pal[pos + 1:pos + 4])
+            pos += length + 1
+
+        def chunk(tag, contents):
+            return struct.pack('>I', len(contents)) + tag + contents + struct.pack('>I', zlib.crc32(tag + contents))
+        raw = b''.join(b'\0' + pixels[y * w:(y + 1) * w] for y in range(h))
+        Path(filename).write_bytes(b'\x89PNG\r\n\x1a\n' +
+                                   chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 3, 0, 0, 0)) +
+                                   chunk(b'PLTE', palette) + chunk(b'IDAT', zlib.compress(raw)) +
+                                   chunk(b'IEND', b''))
+
     def keys(self, text):
         """Queue bytes in the C128 keyboard buffer (KEYD $034A, NDX $D0)."""
         self.write(0x034a, bytes(text))
@@ -152,35 +184,92 @@ def wait_text(m, needle, timeout=60, ignore_case=False):
         time.sleep(0.3)
 
 
-def check(m, labels, mm):
+def petscii(text):
+    """ASCII text as the C128 keyboard buffer holds it (lower/upper case set)."""
+    out = bytearray()
+    for ch in text:
+        c = ord(ch)
+        if 'a' <= ch <= 'z':
+            c -= 32
+        elif 'A' <= ch <= 'Z':
+            c += 128
+        out.append(c)
+    return bytes(out)
+
+
+def type_keys(m, data):
+    """Feed keys ten at a time, the size of the C128 keyboard buffer."""
+    for i in range(0, len(data), 10):
+        while m.memory(0x00d0, 1)[0]:
+            m.resume()
+            time.sleep(0.1)
+        m.keys(data[i:i + 10])
+        m.resume()
+        time.sleep(0.1)
+
+
+def words(m, label, count):
+    data = m.memory(label, count * 2)
+    return [data[i] | data[i + 1] << 8 for i in range(0, count * 2, 2)]
+
+
+def check(m, labels, mm, shots=None):
     m.load_banks()
     assert 'vdc' in m.banks and 'ram01' in m.banks, sorted(m.banks)
-    slot, size = mm['UI_SLOT_START'], mm['UI_SLOT_END'] - mm['UI_SLOT_START']
-    cache = mm['BANK1_OVERLAY_CACHE']
+    slot = mm['UI_SLOT_START']
+    MAIN, BOOK = 0, 1  # include/overlay.h
 
     version = app_version()
-    wait_text(m, f'80Terminal {version} / Launcher')
-    print(f'PASS: launcher drawn by the uimain overlay, version {version}', flush=True)
-    image = m.memory(slot, size)
-    assert m.memory(cache, size, 'ram01') == image, 'bank-1 copy differs from the slot'
-    assert any(image), 'UI slot is empty'
-    print(f'PASS: bank-1 cache at ${cache:04X} matches slot ${slot:04X} ({size} bytes)', flush=True)
+    wait_text(m, 'Network adapter')
+    rows = screen_text(m)
+    assert f'80Terminal {version}' in rows[0] and 'Launcher' in rows[0], rows[0]
+    attrs = m.memory(0x0800, 2000, 'vdc')
+    # Title bar: reverse amber (alternate font, reverse, light yellow).
+    assert attrs[0] == 0xcd and attrs[79] == 0xcd, hex(attrs[0])
+    assert 'F1' in rows[24] and 'RR-Net' in rows[24] and attrs[24 * 80 + 1] == 0xcd
+    assert m.vdc_register(26) & 0x0f == 0, 'background must stay black'
+    print(f'PASS: launcher drawn by the uimain overlay, version {version}, amber bars, black background', flush=True)
+    if shots:
+        m.capture(shots / 'launcher.png')
+    at, length = words(m, labels['cache_at'], 2), words(m, labels['cache_length'], 2)
+    assert at[MAIN] == mm['BANK1_OVERLAY_CACHE'] and 0 < length[MAIN] <= mm['UI_SLOT_END'] - slot, (at, length)
+    main_image = m.memory(slot, length[MAIN])
+    assert m.memory(at[MAIN], length[MAIN], 'ram01') == main_image, 'bank-1 copy differs from the slot'
+    print(f'PASS: uimain ({length[MAIN]} bytes) copied to bank 1 at ${at[MAIN]:04X}', flush=True)
 
-    # Stop at the resident loop's overlay_use() call, wipe the slot and mark
-    # the overlay unloaded: the main screen can then only come from bank 1.
-    number = m.checkpoint(labels['overlay_use'])
-    m.keys(bytes([0x86]))  # F3: 1541 Ultimate II+: not emulated, so it stays unavailable.
+    # F3: 1541 Ultimate II+, not emulated, so it stays unavailable. The
+    # phonebook overlay loads first (reading the phonebook file), then the
+    # main screen must come back from its bank-1 copy.
+    m.keys(bytes([0x86]))
     m.resume()
-    m.wait_stop()
-    m.delete_checkpoint(number)
-    m.write(slot, bytes(size))
-    m.write(labels['loaded'], b'\xff')
-    m.resume()
-    rows = wait_text(m, f'80Terminal {version} / MAIN')
-    assert m.memory(slot, size) == image, 'slot not restored from bank 1'
     rows = wait_text(m, 'Interface unavailable')
-    print('PASS: main screen restored from the bank-1 cache; Ultimate reported unavailable', flush=True)
+    assert 'Main' in rows[0], rows[0]
+    at, length = words(m, labels['cache_at'], 2), words(m, labels['cache_length'], 2)
+    assert length[BOOK] and at[BOOK] == at[MAIN] + length[MAIN], (at, length)
+    assert m.memory(slot, length[MAIN]) == main_image, 'main screen not restored from bank 1'
+    # The Ultimate's long status wraps onto the panel's second status row.
+    assert 'press F1.' in rows[9], rows[8:10]
+    assert 'None yet.' in rows[13] and 'Recent connections' in rows[12]
+    if shots:
+        m.capture(shots / 'main.png')
+    print('PASS: main screen restored from bank 1 after the phonebook overlay; Ultimate reported unavailable', flush=True)
 
+    # F5: the phonebook, read from the disk's phonebook file.
+    m.keys(bytes([0x87]))
+    m.resume()
+    rows = wait_text(m, 'Saved boards 1/50')
+    assert 'Phonebook' in rows[0] and 'LukasSoft BBS' in rows[4] and 'bbs.lukassoft.com:48822' in rows[4], rows[4]
+    print('PASS: phonebook overlay lists the board from the disk file', flush=True)
+    # F1: add a board, keep port 23, choose VT100; it is saved to disk.
+    type_keys(m, bytes([0x85]) + petscii('Test board') + b'\r' + petscii('test.example') + b'\r' + b'\r' + b'3')
+    rows = wait_text(m, 'Phonebook saved.', timeout=120)
+    assert any('Saved boards 2/50' in r for r in rows) and 'Test board' in rows[5], rows[4:6]
+    if shots:
+        m.capture(shots / 'phonebook.png')
+    print('PASS: a board added in the editor is listed and saved', flush=True)
+
+    type_keys(m, bytes([0x88]))  # F7: back to the main screen
+    wait_text(m, 'Recent connections')
     m.keys(bytes([0x8c]))  # F8
     m.resume()
     wait_text(m, 'ready.', ignore_case=True)
@@ -191,18 +280,24 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument('--port', type=int, default=6510)
     parser.add_argument('--disk', default=str(ROOT / 'build' / 'terminal80.d64'))
+    parser.add_argument('--screenshots', action='store_true',
+                        help='save the launcher, main and phonebook screens to build/screens/')
     args = parser.parse_args()
     labels = {}
     for line in (ROOT / 'build' / '80terminal.lbl').read_text().splitlines():
         parts = line.split()
         if len(parts) == 3:
-            labels[parts[2].lstrip('.')] = int(parts[1], 16)
+            # Overlays can reuse a static's name: keep the resident one.
+            labels.setdefault(parts[2].lstrip('.'), int(parts[1], 16))
     mm = memory_map()
+    # The test saves to the phonebook: run on a copy so the built disk stays clean.
+    disk = ROOT / 'build' / 'vice-smoke.d64'
+    disk.write_bytes(Path(args.disk).read_bytes())
     log_path = ROOT / 'build' / 'vice-smoke.log'
     with log_path.open('w') as log:
         p = subprocess.Popen(['x128', '-console', '-default', '-80col', '-pal', '-warp',
                               '-sounddev', 'dummy', '-binarymonitor', '-binarymonitoraddress',
-                              f'127.0.0.1:{args.port}', '-autostart', args.disk],
+                              f'127.0.0.1:{args.port}', '-autostart', str(disk)],
                              stdout=log, stderr=log)
         m = None
         try:
@@ -215,7 +310,11 @@ def main():
                     m = Monitor(args.port)
                 except ConnectionRefusedError:
                     time.sleep(0.1)
-            check(m, labels, mm)
+            shots = None
+            if args.screenshots:
+                shots = ROOT / 'build' / 'screens'
+                shots.mkdir(exist_ok=True)
+            check(m, labels, mm, shots)
         finally:
             if m:
                 try:
@@ -228,6 +327,14 @@ def main():
             except subprocess.TimeoutExpired:
                 p.terminate()
                 p.wait(timeout=5)
+    saved = ROOT / 'build' / 'vice-smoke-phonebook.txt'
+    saved.unlink(missing_ok=True)
+    subprocess.run(['c1541', '-attach', str(disk), '-read', 'phonebook,s', str(saved)],
+                   check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    expected = (b'80TPB 1\r\nLukasSoft BBS|bbs.lukassoft.com|48822|ansi80\r\n'
+                b'Test board|test.example|23|vt100\r\n')
+    assert saved.read_bytes() == expected, saved.read_bytes()
+    print('PASS: the D64 holds the saved phonebook file, in the shareable text format', flush=True)
 
 
 if __name__ == '__main__':

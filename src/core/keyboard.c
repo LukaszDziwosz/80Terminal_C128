@@ -1,4 +1,9 @@
 #include "keyboard.h"
+#ifdef T80_APP
+/* Part of the uiterm overlay (overlay.h): only needed during a session. */
+#pragma code(termcode)
+#pragma data(termdata)
+#endif
 
 uint8_t keyboard_encode(uint8_t key, uint8_t petscii, uint8_t *output)
 {
@@ -25,3 +30,7 @@ uint8_t keyboard_encode(uint8_t key, uint8_t petscii, uint8_t *output)
     output[0] = key;
     return 1;
 }
+#ifdef T80_APP
+#pragma code(code)
+#pragma data(data)
+#endif

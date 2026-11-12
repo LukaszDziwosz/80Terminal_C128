@@ -7,8 +7,15 @@
  * trampoline copy, so only $0400-$FDFF is used. These are disk-independent
  * C128 RAM banks, unlike Oscar64 overlay numbers. */
 #define BANK1_START          0x0400u
-#define BANK1_OVERLAY_CACHE  0x0400u  /* UI overlays, BANK1_OVERLAY_SLOTS slots */
-#define BANK1_OVERLAY_SLOTS  4u
+/* Overlay copies, packed at their real lengths (overlay.c). */
+#define BANK1_OVERLAY_CACHE  0x0400u
+#define BANK1_OVERLAY_END    0x8000u
+/* Phonebook and recent connections: struct phonebook_entry records. */
+#define BANK1_ENTRY_STRIDE   96u
+#define BANK1_PHONEBOOK      0x8000u  /* PHONEBOOK_MAX entries */
+#define BANK1_RECENT         0x9400u  /* RECENT_MAX entries, newest first */
+#define BANK1_RECENT_END     0x9800u
+/* $9800-$FDFF: free, for receive and transfer buffers. */
 #define BANK1_END            0xfe00u
 
 /* Byte copies through the KERNAL's INDFET ($FF74) and INDSTA ($FF77).

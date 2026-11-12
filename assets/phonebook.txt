@@ -1,0 +1,4 @@
+80TPB 1
+# 80Terminal phonebook: one board per line, name|host|port|mode
+# Modes: petscii80, ansi80, vt100. Share this file on your BBS.
+LukasSoft BBS|bbs.lukassoft.com|48822|ansi80

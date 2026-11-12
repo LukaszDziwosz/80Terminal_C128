@@ -2,7 +2,8 @@
 #define T80_SESSION_H
 #include "network.h"
 #include "ui.h"
-/* Resident: opens the connection, runs the terminal and shows the summary.
- * It stays loaded for the whole connection, whatever is in the UI slot. */
-void session_run(const struct net_backend *backend, const struct connect_request *request);
+/* The uiterm overlay's entry point (overlay.h): opens the connection and
+ * runs the terminal, then fills result for the UI's summary. */
+void session_run(const struct net_backend *backend, const struct connect_request *request,
+                 struct session_result *result);
 #endif

@@ -9,14 +9,24 @@
 /* Low C128 RAM, BSS only: large resident buffers and UI overlay state. */
 #pragma section(lowbss, 0, , , bss)
 #pragma section(uibss, 0, , , bss)
-#pragma region(lowram, LOWBSS_START, LOWBSS_END, , , {lowbss, uibss})
-#pragma region(main, MAIN_START, UI_SLOT_START, , , {code, data, bss, heap})
+#pragma region(lowram, LOWBSS_START, LOWBSS_END, , , {lowbss, bss})
+#pragma region(main, MAIN_START, UI_SLOT_START, , , {code, data, heap})
 /* UI overlays (include/overlay.h) share this slot and are cached in bank 1.
  * Each one is its own Oscar64 overlay; their BSS is uibss, not the file. */
 #pragma overlay(uimain, 4)
 #pragma section(uicode, 0)
 #pragma section(uidata, 0)
 #pragma region(uislot, UI_SLOT_START, UI_SLOT_END, , 4, {uicode, uidata})
+#pragma overlay(uibook, 5)
+#pragma section(bookcode, 0)
+#pragma section(bookdata, 0)
+#pragma region(bookslot, UI_SLOT_START, UI_SLOT_END, , 5, {bookcode, bookdata})
+#pragma overlay(uiterm, 6)
+#pragma section(termcode, 0)
+#pragma section(termdata, 0)
+#pragma region(termslot, UI_SLOT_START, UI_SLOT_END, , 6, {termcode, termdata})
+#pragma section(bookbss, 0, , , bss)
+#pragma region(uiram, UIBSS_START, UIBSS_END, , , {uibss, bookbss})
 /* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;
  * RR-Net and Ultimate use the same RAM for their buffers. Only one is loaded. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})

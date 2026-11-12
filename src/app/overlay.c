@@ -6,23 +6,19 @@
 #include "memory_map.h"
 #include "platform.h"
 
-#if BANK1_OVERLAY_CACHE + BANK1_OVERLAY_SLOTS * UI_SLOT_SIZE > BANK1_END
-#error "UI overlay cache does not fit in bank 1"
-#endif
-#if OVERLAY_COUNT > BANK1_OVERLAY_SLOTS
-#error "More UI overlays than bank 1 cache slots"
-#endif
-
-uint8_t overlay_disk_load(const char *name);
+/* Returns the end address (exclusive) of the loaded file, or 0. */
+uint16_t overlay_disk_load(const char *name);
 
 static uint8_t loaded = OVERLAY_NONE;
-static uint8_t cached;
+/* Bank-1 copies, packed in load order from BANK1_OVERLAY_CACHE. */
+static uint16_t cache_at[OVERLAY_COUNT], cache_length[OVERLAY_COUNT];
+static uint16_t cache_next = BANK1_OVERLAY_CACHE;
 
 #ifndef OVERLAY_TEST
 /* Oscar64 writes each overlay to the D64 under its #pragma overlay name. */
-static const char *const overlay_files[OVERLAY_COUNT] = { p"uimain" };
+static const char *const overlay_files[OVERLAY_COUNT] = { p"uimain", p"uibook", p"uiterm" };
 
-uint8_t overlay_disk_load(const char *name)
+uint16_t overlay_disk_load(const char *name)
 {
     uint8_t ok, speed = platform_slow();
     krnio_setbnk(0, 0);
@@ -30,28 +26,35 @@ uint8_t overlay_disk_load(const char *name)
     /* Secondary address 1: load at the address stored in the file. */
     ok = krnio_load(1, platform_device(), 1);
     platform_restore_speed(speed);
-    return ok;
+    /* The KERNAL leaves the end address in EAL ($AE/$AF). */
+    return ok ? *(volatile uint16_t *)0xae : 0;
 }
 #else
-static const char *const overlay_files[OVERLAY_COUNT] = { "uimain" };
+static const char *const overlay_files[OVERLAY_COUNT] = { "uimain", "uibook", "uiterm" };
 #endif
 
 uint8_t overlay_use(uint8_t id)
 {
-    uint16_t cache;
+    uint16_t end, length;
     if (id >= OVERLAY_COUNT) return 0;
     if (loaded == id) return 1;
-    cache = BANK1_OVERLAY_CACHE + (uint16_t)id * UI_SLOT_SIZE;
-    if (cached & (1u << id)) {
-        bank1_read((void *)UI_SLOT_START, cache, UI_SLOT_SIZE);
+    if (cache_length[id]) {
+        bank1_read((void *)UI_SLOT_START, cache_at[id], cache_length[id]);
         loaded = id;
         return 1;
     }
     /* A failed load can leave part of a file in the slot. */
     loaded = OVERLAY_NONE;
-    if (!overlay_disk_load(overlay_files[id])) return 0;
-    bank1_write(cache, (const void *)UI_SLOT_START, UI_SLOT_SIZE);
-    cached |= (uint8_t)(1u << id);
+    end = overlay_disk_load(overlay_files[id]);
+    if (end <= UI_SLOT_START || end > UI_SLOT_END) return 0;
+    length = end - UI_SLOT_START;
+    /* Without room for a copy it still works, loading from disk each time. */
+    if (cache_next + length <= BANK1_OVERLAY_END) {
+        bank1_write(cache_next, (const void *)UI_SLOT_START, length);
+        cache_at[id] = cache_next;
+        cache_length[id] = length;
+        cache_next += length;
+    }
     loaded = id;
     return 1;
 }
