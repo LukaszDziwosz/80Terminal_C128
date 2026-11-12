@@ -3,12 +3,16 @@
 Oscar64 terminal for the Commodore 128's 80-column display. The launcher loads
 one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 
+![Alt text](screenshots/Launcher.png)
+
 Device selection is a one-time launch step: F1 RR-Net, F3 Ultimate II+,
 F5 WiC64, F8 back to BASIC. The selected adapter stays loaded while the main
 screen owns connections: F1 retries interface initialization, F3 connects by
 address, F5 opens the phonebook, keys 1-9 dial a recent connection, and F8
 exits to BASIC. Cancelling or disconnecting returns to the main screen, after
 a summary of the session.
+
+![Alt text](screenshots/Main.png)
 
 ## Phonebook
 
@@ -17,6 +21,8 @@ dials, and the cursor keys select. The nine most recent connections are
 listed on the main screen. Both are plain ASCII text files on the boot disk,
 `phonebook` and `recent`, so a phonebook can be shared on a BBS, downloaded
 to another disk, or edited on any computer:
+
+![Alt text](screenshots/Phonebook.png)
 
 ```
 80TPB 1
@@ -27,7 +33,7 @@ LukasSoft BBS|bbs.lukassoft.com|48822|ansi80
 Each line is `name|host|port|mode`, with CR, LF or CRLF line endings. Modes
 are `petscii80`, `ansi80` and `vt100`; `petscii40`, `amiga80` and `ascii80`
 from the 80Terminal mobile app are read as their nearest 80-column mode, and
-other modes are skipped. Names are up to 24 characters and hosts up to 64.
+other modes are skipped for now. Names are up to 24 characters and hosts up to 64.
 Fields after the mode are ignored, so later versions can add some. Saving
 writes `phonebook.new` first and then replaces `phonebook`, so a full disk
 never loses the previous file; comments are not kept when the C128 saves.
