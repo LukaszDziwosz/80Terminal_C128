@@ -188,6 +188,18 @@ static void test_scroll_page_flip(void)
     /* The KERNAL's own page is visible again for the screen editor. */
     assert(shown_chars == 0 && shown_attrs == 0x800);
 }
+static void test_bold_is_independent_of_colour_order(void)
+{
+    start(0);
+    /* 1;33, 33;1 and separate SGRs are all bright yellow; plain 33 stays brown. */
+    feed("\033[1;1H\033[1;33mA\033[0m\033[33;1mB\033[0m\033[1m\033[33mC\033[0m\033[33mD");
+    assert((vdc[0x800] & 0x0f) == 13 && (vdc[0x801] & 0x0f) == 13 && (vdc[0x802] & 0x0f) == 13);
+    assert((vdc[0x803] & 0x0f) == 12);
+    /* Default text stays white, SGR 22 drops bold only, 90-97 stay intense. */
+    feed("\033[0mE\033[1;31m\033[22mF\033[91mG");
+    assert((vdc[0x804] & 0x0f) == 15 && (vdc[0x805] & 0x0f) == 8 && (vdc[0x806] & 0x0f) == 9);
+}
+
 int main(void)
 {
     uint8_t key[5];
@@ -228,6 +240,7 @@ int main(void)
     assert(restored == 1 && !cursor_visible);
     test_profiles_and_graphics();
     test_margins_and_reverse_index();
+    test_bold_is_independent_of_colour_order();
     test_tabs_modes_and_reset();
     test_editing_and_wrap();
     test_scroll_page_flip();

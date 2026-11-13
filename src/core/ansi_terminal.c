@@ -38,8 +38,9 @@ static uint8_t newline_mode, scroll_top, scroll_bottom;
 static uint8_t batch_update, height, vt100_enabled, charset_target;
 static uint8_t g0_graphics, g1_graphics, active_charset, origin_mode, insert_mode;
 static uint8_t tabs[10], last_printable;
-static uint8_t fg, bg, bright, reverse, under, blink;
-static uint8_t saved_modes[14];
+/* bright: the colour itself is intense (default white, SGR 90-97); bold: SGR 1. */
+static uint8_t fg, bg, bright, bold, reverse, under, blink;
+static uint8_t saved_modes[15];
 
 static void save_state(void)
 {
@@ -51,6 +52,7 @@ static void save_state(void)
     saved_modes[8] = bg; saved_modes[9] = bright;
     saved_modes[10] = reverse; saved_modes[11] = under;
     saved_modes[12] = blink; saved_modes[13] = attr;
+    saved_modes[14] = bold;
 }
 static void restore_state(void)
 {
@@ -62,6 +64,7 @@ static void restore_state(void)
     bg = saved_modes[8]; bright = saved_modes[9];
     reverse = saved_modes[10]; under = saved_modes[11];
     blink = saved_modes[12]; attr = saved_modes[13];
+    bold = saved_modes[14];
 }
 static void reset_tabs(void)
 {
@@ -74,7 +77,7 @@ static void reset_state(void)
     x = y = wrap = application_cursor = newline_mode = origin_mode = insert_mode = 0;
     g0_graphics = g1_graphics = active_charset = charset_target = 0;
     autowrap = cursor_visible = 1; scroll_top = 0; scroll_bottom = H - 1;
-    fg = 7; bg = reverse = under = blink = 0; bright = 1; attr = 15;
+    fg = 7; bg = bold = reverse = under = blink = 0; bright = 1; attr = 15;
     last_printable = ' '; reset_tabs(); save_state();
 }
 static ansi_send_callback send_bytes;
@@ -243,8 +246,8 @@ static void sgr(void)
     /* Preserve current state only for successive SGRs; SGR 0 resets. */
     for (i = 0; i < count; ++i) {
         uint8_t p = params[i];
-        if (!p) { fg = 7; bg = 0; bright = 1; reverse = under = blink = 0; }
-        else if (p == 1) bright = 1; else if (p == 22) bright = 0;
+        if (!p) { fg = 7; bg = bold = 0; bright = 1; reverse = under = blink = 0; }
+        else if (p == 1) bold = 1; else if (p == 22) bold = 0;
         else if (p == 4) under = 1; else if (p == 24) under = 0;
         else if (p == 5) blink = 1; else if (p == 25) blink = 0;
         else if (p == 7) reverse = 1; else if (p == 27) reverse = 0;
@@ -255,7 +258,7 @@ static void sgr(void)
         else if (p >= 40 && p <= 47) bg = p - 40;
         else if (p >= 100 && p <= 107) bg = p - 100;
     }
-    attr = color(fg, bright);
+    attr = color(fg, bright | bold);
     if (bg) attr = color(bg, 0) | 0x40;
     if (reverse) attr |= 0x40;
     if (under) attr |= 0x20;
