@@ -1,4 +1,5 @@
-OSCAR64 ?= $(if $(wildcard .tools/oscar64/bin/oscar64),.tools/oscar64/bin/oscar64,oscar64)
+OSCAR64_HOME ?= $(HOME)/Developer/oscar64
+OSCAR64 ?= $(or $(shell command -v oscar64 2>/dev/null),$(OSCAR64_HOME)/bin/oscar64)
 C1541 ?= c1541
 X128 ?= x128
 HOST_CC ?= cc
@@ -6,12 +7,12 @@ PYTHON ?= python3
 OSCARFLAGS ?= -tm=c128e -n -O2 -g -dNOFLOAT -dNOLONG -dT80_APP
 SOURCES := $(shell find src include -type f \( -name '*.c' -o -name '*.h' \))
 APP_SOURCES := src/app/main.c src/app/session.c src/core/telnet.c src/core/keyboard.c src/core/ansi_terminal.c \
-               src/app/program.c src/app/overlay.c src/ui/main_screen.c src/ui/phonebook_screen.c src/platform/c128/platform.c src/platform/c128/bank1.c src/platform/c128/vdc_screen.c \
+               src/app/program.c src/app/overlay.c src/ui/main_screen.c src/ui/phonebook_screen.c src/ui/transfer_screen.c src/core/xmodem.c src/core/xmodem_send.c src/platform/c128/platform.c src/platform/c128/bank1.c src/platform/c128/disk.c src/platform/c128/vdc_screen.c \
                src/net/unimplemented.c src/net/rrnet/backend.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_dhcp.c src/net/rrnet/ip65_ip.c src/net/rrnet/ip65_dns.c src/net/rrnet/ip65_tcp.c \
                src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/wic64/backend.c
 WIC64_SOURCES := src/net/wic64/bridge.asm third_party/wic64/wic64.asm third_party/wic64/wic64.h
-TESTS := telnet xmodem phonebook keyboard ansi_terminal
-HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-ultimate build/test-program-init build/test-book build/test-rrnet-ip65-hw build/test-rrnet-dhcp build/test-rrnet-transport
+TESTS := telnet phonebook keyboard ansi_terminal
+HOST_TESTS := $(addprefix build/test-,$(TESTS)) build/test-xmodem build/test-ultimate build/test-program-init build/test-book build/test-rrnet-ip65-hw build/test-rrnet-dhcp build/test-rrnet-transport
 RRNET_PROTOCOL_SOURCES := src/net/rrnet/ip65_dhcp.c src/net/rrnet/ip65_arp.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_ip.c src/net/rrnet/ip65_dns.c src/net/rrnet/ip65_tcp.c src/net/rrnet/backend.c
 DHCP_TEST_SOURCES := tests/rrnet_dhcp_test.c $(RRNET_PROTOCOL_SOURCES)
 DISK_IMAGE := build/terminal80.d64
@@ -44,8 +45,20 @@ build/test-%: tests/%_test.c src/core/%.c include/%.h include/telnet.h | build
 build/test-ultimate: tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c src/net/ultimate/uci.h include/network.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DULTIMATE_TEST -Iinclude -Isrc/net/ultimate tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c -o $@
 
+XMODEM_TEST_SOURCES := tests/xmodem_test.c src/core/xmodem.c src/core/xmodem_send.c
+build/test-xmodem: $(XMODEM_TEST_SOURCES) include/xmodem.h | build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -Iinclude $(XMODEM_TEST_SOURCES) -o $@
+
+# Runs the transfer overlay against lrzsz (lsz/lrz), when it is installed.
+TRANSFER_TEST_SOURCES := tests/transfer_test.c src/ui/transfer_screen.c src/core/telnet.c src/core/xmodem.c src/core/xmodem_send.c
+build/test-transfer: $(TRANSFER_TEST_SOURCES) tests/check.h tests/stubs/conio.h include/transfer.h include/disk.h include/xmodem.h include/telnet.h src/ui/draw.h | build
+	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DXFER_TEST -Iinclude $(TRANSFER_TEST_SOURCES) -o $@
+ifneq ($(shell command -v lsz),)
+HOST_TESTS += build/test-transfer
+endif
+
 BOOK_TEST_SOURCES := tests/book_test.c src/ui/phonebook_screen.c
-build/test-book: $(BOOK_TEST_SOURCES) tests/check.h src/core/phonebook.c include/phonebook.h include/book.h include/book_disk.h include/bank1.h tests/stubs/conio.h src/ui/draw.h | build
+build/test-book: $(BOOK_TEST_SOURCES) tests/check.h src/core/phonebook.c include/phonebook.h include/book.h include/disk.h include/bank1.h tests/stubs/conio.h src/ui/draw.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DBOOK_TEST -Iinclude $(BOOK_TEST_SOURCES) -o $@
 
 PROGRAM_TEST_SOURCES := tests/program_init_test.c src/app/program.c src/app/overlay.c src/ui/main_screen.c
@@ -72,6 +85,7 @@ test-oscar: build/wic64bridge.bin | build
 	  $(OSCAR64) -n -O2 -ea -i=include -o=build/test-$$name.prg tests/$${name}_test.c src/core/$$name.c; \
 	done
 	$(OSCAR64) -n -O2 -ea -dULTIMATE_TEST -i=include -i=src/net/ultimate -o=build/test-ultimate.prg tests/ultimate_test.c src/net/ultimate/backend.c src/net/ultimate/uci.c
+	$(OSCAR64) -n -O2 -ea -i=include -o=build/test-xmodem.prg $(XMODEM_TEST_SOURCES)
 	$(OSCAR64) -n -O2 -ea -dBOOK_TEST -i=include -o=build/test-book.prg $(BOOK_TEST_SOURCES)
 	$(OSCAR64) -n -O2 -ea -dPROGRAM_TEST -dOVERLAY_TEST -i=include -o=build/test-program-init.prg $(PROGRAM_TEST_SOURCES)
 	$(OSCAR64) -n -O2 -ea -dRRNET_IP65_TEST -i=include -i=src/net/rrnet -o=build/test-rrnet-ip65-hw.prg tests/rrnet_ip65_hw_test.c src/net/rrnet/ip65_rrnet.c src/net/rrnet/ip65_ethernet.c src/net/rrnet/ip65_arp.c

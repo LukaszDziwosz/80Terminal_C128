@@ -3,6 +3,12 @@
 
 #include "xmodem.h"
 
+#ifdef T80_APP
+/* Part of the transfer overlay (overlay.h). */
+#pragma code(xfercode)
+#pragma data(xferdata)
+#endif
+
 #define XMODEM_STATE_WAITING       0
 #define XMODEM_STATE_BLOCK_NUMBER  1
 #define XMODEM_STATE_COMPLEMENT    2
@@ -226,3 +232,7 @@ uint16_t xmodem_current_block_size(
 {
     return receiver->block_size;
 }
+#ifdef T80_APP
+#pragma code(code)
+#pragma data(data)
+#endif

@@ -8,7 +8,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "book.h"
-#include "book_disk.h"
+#include "disk.h"
 #include "bank1.h"
 #include "phonebook.h"
 #include "platform.h"
@@ -56,91 +56,6 @@ static const char *const profile_keys[] = {
     "1", "ANSI", "2", "PETSCII", "3", "VT100", "RETURN", "Keep", "F7", "Cancel", 0 };
 static const char *const confirm_keys[] = { "Y", "Delete", "N", "Keep", 0 };
 
-/* ---- C128 disk access (tests provide their own) ---- */
-#ifndef BOOK_TEST
-char book_disk_message[40];
-/* DOS commands such as "r:phonebook=phonebook.new" need the room. */
-static char disk_name[41];
-static uint8_t disk_speed;
-
-static char petscii(char c) { return c >= 'a' && c <= 'z' ? (char)(c - 32) : c; }
-/* ASCII to PETSCII for DOS names, modes and commands: lowercase letters
- * become $41-$5A, which a C128 lists in lowercase and DOS reads as the
- * letters of ",s,w" or "s:". */
-static void petscii_name(const char *name, const char *suffix)
-{
-    uint8_t n = 0;
-    while (*name && n < sizeof(disk_name) - 1) disk_name[n++] = petscii(*name++);
-    while (*suffix && n < sizeof(disk_name) - 1) disk_name[n++] = petscii(*suffix++);
-    disk_name[n] = 0;
-}
-static uint8_t read_status(void)
-{
-    int n;
-    krnio_pstatus[15] = KRNIO_OK;
-    n = krnio_read(15, book_disk_message, sizeof(book_disk_message) - 1);
-    if (n < 2) { strcpy(book_disk_message, "74,DRIVE NOT READY"); return 74; }
-    while (n && (book_disk_message[n - 1] == 13 || book_disk_message[n - 1] == 10)) --n;
-    book_disk_message[n] = 0;
-    return (uint8_t)((book_disk_message[0] - '0') * 10 + book_disk_message[1] - '0');
-}
-static uint8_t open_command(const char *command)
-{
-    disk_speed = platform_slow();
-    krnio_setbnk(0, 0);
-    petscii_name(command, "");
-    krnio_setnam(disk_name);
-    if (!krnio_open(15, platform_device(), 15)) {
-        platform_restore_speed(disk_speed);
-        strcpy(book_disk_message, "74,DRIVE NOT READY");
-        return 74;
-    }
-    return 0;
-}
-uint8_t book_disk_command(const char *command)
-{
-    uint8_t code = open_command(command);
-    if (code) return code;
-    code = read_status();
-    krnio_close(15);
-    platform_restore_speed(disk_speed);
-    return code;
-}
-uint8_t book_disk_open(const char *name, uint8_t write)
-{
-    uint8_t code = open_command("");
-    if (code) return code;
-    petscii_name(name, write ? ",s,w" : ",s,r");
-    krnio_setnam(disk_name);
-    krnio_open(2, platform_device(), 2);
-    code = read_status();
-    if (code) {
-        /* Close the file before the command channel, which closes all. */
-        krnio_close(2);
-        krnio_close(15);
-        platform_restore_speed(disk_speed);
-    }
-    return code;
-}
-uint8_t book_disk_read(char *buffer, uint8_t capacity)
-{
-    int n = krnio_read(2, buffer, capacity);
-    return n > 0 ? (uint8_t)n : 0;
-}
-uint8_t book_disk_write(const char *data, uint8_t length)
-{
-    return krnio_write(2, data, length) == length ? 0 : 1;
-}
-uint8_t book_disk_close(void)
-{
-    uint8_t code;
-    krnio_close(2);
-    code = read_status();
-    krnio_close(15);
-    platform_restore_speed(disk_speed);
-    return code;
-}
-#endif
 
 /* ---- Entries in bank 1 ---- */
 static uint16_t slot(uint16_t base, uint8_t index)
@@ -174,9 +89,9 @@ static uint8_t load(const char *name, uint16_t base, uint8_t max)
     uint8_t count = 0, length = 0, overflow = 0, n, i;
     char c;
     skipped = unreadable = 0;
-    load_status = book_disk_open(name, 0);
+    load_status = disk_open(name, ",s,r", 2);
     if (load_status) return 0;
-    while ((n = book_disk_read(chunk, sizeof(chunk))) != 0) {
+    while ((n = disk_read(chunk, sizeof(chunk))) != 0) {
         for (i = 0; i < n; ++i) {
             c = chunk[i];
             if (c == 13 || c == 10) {
@@ -191,7 +106,7 @@ static uint8_t load(const char *name, uint16_t base, uint8_t max)
     line[length] = 0;
     if (overflow) ++unreadable;
     else if (length) add_line(base, &count, max);
-    load_status = book_disk_close();
+    load_status = disk_close();
     return count;
 }
 static void copy_name(char *to, const char *a, const char *b)
@@ -208,23 +123,23 @@ static uint8_t save(const char *name, uint16_t base, uint8_t count)
     uint8_t code, i, n;
     copy_name(temp, name, ".new");
     copy_name(command, "s:", temp);
-    book_disk_command(command);
-    code = book_disk_open(temp, 1);
+    disk_command(command);
+    code = disk_open(temp, ",s,w", 2);
     if (code) return code;
     copy_name(line, PHONEBOOK_HEADER, "\r\n");
-    code = book_disk_write(line, (uint8_t)strlen(line));
+    code = disk_write(line, (uint8_t)strlen(line));
     for (i = 0; i < count && !code; ++i) {
         get(base, i, &entry);
         n = phonebook_format_line(line, &entry);
-        if (n) code = book_disk_write(line, n);
+        if (n) code = disk_write(line, n);
     }
-    i = book_disk_close();
+    i = disk_close();
     if (code || i) return i ? i : 74;
     copy_name(command, "s:", name);
-    book_disk_command(command);
+    disk_command(command);
     copy_name(command, "r:", name);
     copy_name(command + strlen(command), "=", temp);
-    return book_disk_command(command);
+    return disk_command(command);
 }
 
 /* ---- Startup and recent connections ---- */
@@ -354,7 +269,7 @@ static void draw_list(void)
 static void show_save(uint8_t code)
 {
     if (code) {
-        copy_name(note_text, "Not saved, disk error ", book_disk_message);
+        copy_name(note_text, "Not saved, disk error ", disk_message);
         note = note_text; note_attr = UI_ERROR;
     } else {
         note = "Phonebook saved."; note_attr = UI_GOOD;

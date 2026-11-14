@@ -5,7 +5,7 @@
 #include <string.h>
 #include "stubs/conio.h"
 #include "book.h"
-#include "book_disk.h"
+#include "disk.h"
 #include "bank1.h"
 #include "phonebook.h"
 
@@ -60,7 +60,8 @@ static void all_keys_used(void) { assert(!script[script_at]); }
 static struct { char name[17]; char data[1024]; uint16_t length; uint8_t used; } files[FILES];
 static int open_file = -1, write_mode, fail_write, commands;
 static uint16_t cursor;
-char book_disk_message[40];
+char disk_message[40];
+uint8_t disk_device = 8;
 static int find(const char *name)
 {
     int i;
@@ -83,10 +84,12 @@ static const char *file(const char *name)
     files[i].data[files[i].length] = 0;
     return files[i].data;
 }
-static uint8_t status(uint8_t code, const char *text) { strcpy(book_disk_message, text); return code; }
-uint8_t book_disk_open(const char *name, uint8_t write)
+static uint8_t status(uint8_t code, const char *text) { strcpy(disk_message, text); return code; }
+uint8_t disk_open(const char *name, const char *mode, uint8_t secondary)
 {
     int i = find(name);
+    uint8_t write = mode[3] == 'w';
+    assert(secondary == 2 && (!strcmp(mode, ",s,r") || !strcmp(mode, ",s,w")));
     assert(open_file < 0);
     if (!write) {
         if (i < 0) return status(62, "62,FILE NOT FOUND,00,00");
@@ -98,7 +101,7 @@ uint8_t book_disk_open(const char *name, uint8_t write)
     open_file = i; write_mode = write; cursor = 0;
     return status(0, "00, OK,00,00");
 }
-uint8_t book_disk_read(char *buffer, uint8_t capacity)
+uint8_t disk_read(char *buffer, uint8_t capacity)
 {
     uint8_t n = 0;
     assert(open_file >= 0 && !write_mode);
@@ -107,7 +110,7 @@ uint8_t book_disk_read(char *buffer, uint8_t capacity)
     while (n < capacity && cursor < files[open_file].length) buffer[n++] = files[open_file].data[cursor++];
     return n;
 }
-uint8_t book_disk_write(const char *data, uint8_t length)
+uint8_t disk_write(const char *data, uint8_t length)
 {
     assert(open_file >= 0 && write_mode);
     if (fail_write && files[open_file].length + length > 60) return 1;
@@ -115,13 +118,13 @@ uint8_t book_disk_write(const char *data, uint8_t length)
     files[open_file].length += length;
     return 0;
 }
-uint8_t book_disk_close(void)
+uint8_t disk_close(void)
 {
     assert(open_file >= 0);
     open_file = -1;
     return fail_write ? status(72, "72,DISK FULL,00,00") : status(0, "00, OK,00,00");
 }
-uint8_t book_disk_command(const char *command)
+uint8_t disk_command(const char *command)
 {
     char target[20];
     const char *eq;

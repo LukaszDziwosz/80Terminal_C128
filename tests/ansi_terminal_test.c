@@ -43,6 +43,11 @@ void screen_show(uint16_t chars, uint16_t attrs)
     shown_chars = chars; shown_attrs = attrs; vdc = ram + chars;
     watch_visible = 0; ++flips;
 }
+static uint8_t saved_page[4000];
+void screen_save_page(uint16_t chars, uint16_t attrs)
+{ memcpy(saved_page, ram + chars, 2000); memcpy(saved_page + 2000, ram + attrs, 2000); }
+void screen_restore_page(uint16_t chars, uint16_t attrs)
+{ memcpy(ram + chars, saved_page, 2000); memcpy(ram + attrs, saved_page + 2000, 2000); }
 void screen_set_cursor(uint16_t at, uint8_t visible)
 { cursor_address = (uint16_t)(at - shown_chars); cursor_visible = visible; }
 static void send(const uint8_t *data, uint8_t length)
@@ -200,6 +205,29 @@ static void test_bold_is_independent_of_colour_order(void)
     assert((vdc[0x804] & 0x0f) == 15 && (vdc[0x805] & 0x0f) == 8 && (vdc[0x806] & 0x0f) == 9);
 }
 
+static void test_suspend_resume(void)
+{
+    start(0);
+    /* Something on the hidden page too: scroll once so the visible page is $1000. */
+    feed("\033[25;1H\nTop\033[1;31mRed");
+    assert(shown_chars == 0x1000 && !memcmp(vdc + 24 * 80, "TopRed", 6));
+    ansi_terminal_begin_update();
+    ansi_terminal_suspend();
+    /* The KERNAL page is shown; a transfer overwrites it. */
+    assert(shown_chars == 0 && restored);
+    memset(ram, 'Z', 0x1000);
+    memset(ram + 0x1000, 'Q', 0x1000);
+    assert(ansi_terminal_resume(8));
+    assert(shown_chars == 0x1000 && !cursor_visible);
+    assert(!memcmp(vdc + 24 * 80, "TopRed", 6) && vdc[0x800 + 24 * 80 + 3] != vdc[0x800 + 24 * 80]);
+    /* Parser state survived: text continues at the same place in red. */
+    feed("!");
+    assert(vdc[24 * 80 + 6] == '!' && vdc[0x800 + 24 * 80 + 6] == vdc[0x800 + 24 * 80 + 3]);
+    ansi_terminal_end_update();
+    assert(cursor_visible && cursor_address == 24 * 80 + 7);
+    assert(!ansi_terminal_resume(9));  /* no font on device 9 */
+}
+
 int main(void)
 {
     uint8_t key[5];
@@ -244,6 +272,7 @@ int main(void)
     test_tabs_modes_and_reset();
     test_editing_and_wrap();
     test_scroll_page_flip();
+    test_suspend_resume();
     puts("ANSI and VT100 terminal parser tests passed");
     return 0;
 }

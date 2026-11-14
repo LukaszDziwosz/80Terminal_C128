@@ -8,6 +8,7 @@
 #include "session.h"
 #include "ui.h"
 #include "book.h"
+#include "transfer.h"
 
 #if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
 #pragma bss(lowbss)
@@ -15,6 +16,7 @@
 static struct connect_request request;
 static struct session_result result;
 struct book_state book;
+uint8_t session_buffer[1024];
 #if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
 #pragma bss(bss)
 #endif
@@ -56,7 +58,14 @@ void program_run(const struct net_backend *backend)
             if (!ui_prepare_connect(backend, &request)) continue;
         }
         if (!use(OVERLAY_UI_TERM)) break;
-        session_run(backend, &request, &result);
+        session_run(backend, &request, &result, 0);
+        /* HELP during a session: the transfer overlay borrows the slot,
+         * then the terminal continues where it was. */
+        while (result.outcome == SESSION_TRANSFER) {
+            if (use(OVERLAY_UI_XFER)) transfer_run(backend, &request);
+            if (!use(OVERLAY_UI_TERM)) goto done;
+            session_run(backend, &request, &result, 1);
+        }
         if (result.outcome == SESSION_ENDED) {
             if (!use(OVERLAY_UI_BOOK)) break;
             book_note_recent(&request);

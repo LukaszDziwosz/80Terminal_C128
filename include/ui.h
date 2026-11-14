@@ -17,7 +17,8 @@ enum ui_action { UI_QUIT = 0, UI_CONNECT = 1, UI_PHONEBOOK = 2, UI_BACK = 3 };
 enum session_outcome {
     SESSION_NONE = 0,       /* cancelled before connecting: nothing to show */
     SESSION_CONNECT_FAILED, /* message: the adapter's reason */
-    SESSION_ENDED           /* message: why; detail: adapter error, if any */
+    SESSION_ENDED,          /* message: why; detail: adapter error, if any */
+    SESSION_TRANSFER        /* HELP pressed: still connected, transfer next */
 };
 struct session_result {
     uint8_t outcome;

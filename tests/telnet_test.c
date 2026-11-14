@@ -197,6 +197,39 @@ static void test_return_negotiation(void)
     expect_sent((const uint8_t[]){13}, 1);
 }
 
+static void test_transfer_mode(void)
+{
+    static const uint8_t will_binary[] = {IAC, WILL, 0};
+    static const uint8_t do_binary[] = {IAC, DO, 0};
+    static const uint8_t cr_nul[] = {13, 0, 'x', 13, 13, 0};
+    uint8_t output, got[8], n = 0, i;
+
+    reset(TELNET_PROFILE_ANSI_80);
+    /* Terminal use is unchanged: CR alone, NUL after CR delivered. */
+    telnet_send_byte(13);
+    assert(sent_length == 1 && sent[0] == 13);
+    assert(telnet_receive(13, &output) == 1 && telnet_receive(0, &output) == 1 && output == 0);
+    /* Transfer without binary mode: CR NUL both ways. */
+    telnet_set_transfer(1);
+    sent_length = 0;
+    telnet_send_byte(13);
+    telnet_send_byte(0);
+    assert(sent_length == 3 && sent[0] == 13 && sent[1] == 0 && sent[2] == 0);
+    for (i = 0; i < sizeof(cr_nul); ++i)
+        if (telnet_receive(cr_nul[i], &output)) got[n++] = output;
+    assert(n == 4 && got[0] == 13 && got[1] == 'x' && got[2] == 13 && got[3] == 13);
+    /* A NUL that is real data (not after CR) passes. */
+    assert(telnet_receive(0, &output) == 1 && output == 0);
+    /* Once both directions are binary, bytes pass unchanged. */
+    feed(will_binary, sizeof(will_binary));
+    feed(do_binary, sizeof(do_binary));
+    sent_length = 0;
+    telnet_send_byte(13);
+    assert(sent_length == 1);
+    assert(telnet_receive(13, &output) == 1 && telnet_receive(0, &output) == 1 && output == 0);
+    telnet_set_transfer(0);
+}
+
 int main(void)
 {
     test_data_and_escaped_iac();
@@ -207,6 +240,7 @@ int main(void)
     test_outbound_iac_is_escaped();
     test_binary_request();
     test_return_negotiation();
+    test_transfer_mode();
     puts("telnet tests passed");
     return 0;
 }

@@ -25,6 +25,12 @@
 #pragma section(termcode, 0)
 #pragma section(termdata, 0)
 #pragma region(termslot, UI_SLOT_START, UI_SLOT_END, , 6, {termcode, termdata})
+#pragma overlay(uixfer, 7)
+#pragma section(xfercode, 0)
+#pragma section(xferdata, 0)
+#pragma region(xferslot, UI_SLOT_START, UI_SLOT_END, , 7, {xfercode, xferdata})
+#pragma section(xferbss, 0, , , bss)
+#pragma region(xferram, XFERBSS_START, XFERBSS_END, , , {xferbss})
 #pragma section(bookbss, 0, , , bss)
 #pragma region(uiram, UIBSS_START, UIBSS_END, , , {uibss, bookbss})
 /* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;

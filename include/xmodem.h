@@ -64,4 +64,43 @@ uint16_t xmodem_current_block_size(
     const struct xmodem_receiver* receiver);
 uint16_t xmodem_crc16(const uint8_t* data, uint16_t length);
 
+
+/* Sender: the caller reads the file and sends packets; this decides when.
+ * XMODEM_SEND_NEXT: read up to xmodem_send_capacity() bytes, then call
+ * xmodem_send_load() with the count (0 at the end of the file) and send
+ * the packet it describes; XMODEM_SEND_AGAIN: send the same packet again. */
+#define XMODEM_SUB 0x1A  /* pads the last block */
+enum xmodem_send_event {
+    XMODEM_SEND_NONE = 0,
+    XMODEM_SEND_NEXT,
+    XMODEM_SEND_AGAIN,
+    XMODEM_SEND_COMPLETE,
+    XMODEM_SEND_CANCELLED,
+    XMODEM_SEND_ERROR
+};
+struct xmodem_sender {
+    uint32_t sent;          /* payload bytes acknowledged */
+    uint16_t block_size;    /* of the current packet: 128 or 1024 */
+    uint16_t length;        /* file bytes in it; the rest is padding */
+    uint8_t state;
+    uint8_t one_k;
+    uint8_t crc_mode;
+    uint8_t block_number;
+    uint8_t errors;
+    uint8_t cancel_count;
+};
+void xmodem_send_init(struct xmodem_sender *sender, uint8_t one_k);
+enum xmodem_send_event xmodem_send_receive(struct xmodem_sender *sender, uint8_t value);
+enum xmodem_send_event xmodem_send_timeout(struct xmodem_sender *sender);
+uint8_t xmodem_send_started(const struct xmodem_sender *sender);
+/* After the last block: the packet to (re)send is a single EOT. */
+uint8_t xmodem_send_at_end(const struct xmodem_sender *sender);
+/* Bytes to read for the next packet: 1024 in 1K CRC mode, else 128. */
+uint16_t xmodem_send_capacity(const struct xmodem_sender *sender);
+/* length file bytes are in data[0..]; pads data to the block size. Returns
+ * 0 if this is the end of the file (send EOT: one byte, XMODEM_EOT). */
+uint8_t xmodem_send_load(struct xmodem_sender *sender, uint8_t *data, uint16_t length);
+/* The 3-byte header and the 1- or 2-byte check of the loaded packet. */
+void xmodem_send_header(const struct xmodem_sender *sender, uint8_t *header);
+uint8_t xmodem_send_check(const struct xmodem_sender *sender, const uint8_t *data, uint8_t *check);
 #endif

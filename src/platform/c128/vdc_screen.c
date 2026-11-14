@@ -4,6 +4,7 @@
 #endif
 #include "platform.h"
 #include "vdc_screen.h"
+#include "bank1.h"
 
 #define VDC_INDEX (*(volatile uint8_t *)0xd600)
 #define VDC_DATA (*(volatile uint8_t *)0xd601)
@@ -45,6 +46,14 @@ void screen_write_run(uint16_t address, const uint8_t *data, uint16_t length)
     update_address(address);
     ready(); VDC_INDEX = 31;
     while (length--) { ready(); VDC_DATA = *data++; }
+}
+void screen_read_run(uint16_t address, uint8_t *data, uint16_t length)
+{
+    if (!length) return;
+    /* Reading R31 returns the byte at the update address and advances it. */
+    update_address(address);
+    ready(); VDC_INDEX = 31;
+    while (length--) { ready(); *data++ = VDC_DATA; }
 }
 #endif
 void screen_fill_run(uint16_t address, uint8_t value, uint16_t length)
@@ -107,6 +116,13 @@ void screen_restore_font(void)
     __asm { jsr $ff62 }  /* C128 KERNAL DLCHR, available with c128e. */
     font_active = 0;
 }
+static uint8_t font_cached;
+static void font_chunk_to_vdc(uint16_t offset)
+{
+    /* VDC alternate characters 0..127 are normal ASCII, while the
+     * normal bank holds CP437 128..255 as character codes 0..127. */
+    screen_write_run(offset < 2048 ? 0x3000 + offset : 0x2000 + offset - 2048, font_chunk, 256);
+}
 uint8_t screen_load_cp437(uint8_t device)
 {
     uint16_t offset;
@@ -114,6 +130,16 @@ uint8_t screen_load_cp437(uint8_t device)
     uint8_t ok = 1;
     if (font_active) screen_restore_font();
     saved_font_reg = screen_reg_read(28);
+    if (font_cached) {
+        /* Later sessions and returning from a transfer: no disk access. */
+        font_active = 1;
+        for (offset = 0; offset < 4096; offset += 256) {
+            bank1_read(font_chunk, BANK1_FONT + offset, 256);
+            font_chunk_to_vdc(offset);
+        }
+        screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
+        return 1;
+    }
     speed = platform_slow();
     krnio_setbnk(0, 0);
     krnio_setnam(p"cp437font,s,r");
@@ -128,19 +154,46 @@ uint8_t screen_load_cp437(uint8_t device)
             ok = 0;
             break;
         }
-        /* VDC alternate characters 0..127 are normal ASCII, while the
-         * normal bank holds CP437 128..255 as character codes 0..127. */
-        if (offset < 2048)
-            screen_write_run(0x3000 + offset, font_chunk, 256);
-        else
-            screen_write_run(0x2000 + offset - 2048, font_chunk, 256);
+        font_chunk_to_vdc(offset);
+        bank1_write(BANK1_FONT + offset, font_chunk, 256);
     }
     /* A trailing byte or I/O error also rejects a malformed font. */
     if (ok && krnio_read(2, (char *)font_chunk, 1) != 0) ok = 0;
     krnio_close(2);
     platform_restore_speed(speed);
     if (!ok) screen_restore_font();
-    else screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
+    else {
+        font_cached = 1;
+        screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
+    }
     return ok;
 }
+#ifdef T80_APP
+#pragma code(termcode)
+#pragma data(termdata)
+#endif
+/* 2000 cells in 8 chunks of 250, through the font buffer. */
+static void page_copy(uint16_t chars, uint16_t attrs, uint8_t save)
+{
+    uint16_t offset, at;
+    uint8_t part;
+    for (part = 0; part < 2; ++part) {
+        at = part ? attrs : chars;
+        for (offset = 0; offset < 2000; offset += 250) {
+            if (save) {
+                screen_read_run(at + offset, font_chunk, 250);
+                bank1_write(BANK1_SCREEN + part * 2000 + offset, font_chunk, 250);
+            } else {
+                bank1_read(font_chunk, BANK1_SCREEN + part * 2000 + offset, 250);
+                screen_write_run(at + offset, font_chunk, 250);
+            }
+        }
+    }
+}
+void screen_save_page(uint16_t chars, uint16_t attrs) { page_copy(chars, attrs, 1); }
+void screen_restore_page(uint16_t chars, uint16_t attrs) { page_copy(chars, attrs, 0); }
+#ifdef T80_APP
+#pragma code(code)
+#pragma data(data)
+#endif
 #endif

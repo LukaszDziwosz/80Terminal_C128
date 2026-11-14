@@ -15,7 +15,11 @@
 #define BANK1_PHONEBOOK      0x8000u  /* PHONEBOOK_MAX entries */
 #define BANK1_RECENT         0x9400u  /* RECENT_MAX entries, newest first */
 #define BANK1_RECENT_END     0x9800u
-/* $9800-$FDFF: free, for receive and transfer buffers. */
+#define BANK1_FONT           0x9800u  /* CP437 font after its first load: 4 KB */
+#define BANK1_SCREEN         0xa800u  /* terminal screen during a transfer: 2000 + 2000 */
+#define BANK1_DIRECTORY      0xb800u  /* disk directory for the upload list */
+#define BANK1_DIRECTORY_END  0xc800u
+/* $C800-$FDFF: free. */
 #define BANK1_END            0xfe00u
 
 /* Byte copies through the KERNAL's INDFET ($FF74) and INDSTA ($FF77).

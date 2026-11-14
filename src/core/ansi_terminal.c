@@ -330,6 +330,23 @@ uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t vt10
     screen_fill_run(chars, ' ', CELLS); screen_fill_run(attrs, attr | 0x80, CELLS);
     return 1;
 }
+void ansi_terminal_suspend(void)
+{
+    screen_set_cursor(address(x, y), 0);
+    screen_save_page(chars, attrs);
+    screen_show(original_chars, original_attrs);
+    screen_restore_font();
+}
+uint8_t ansi_terminal_resume(uint8_t device)
+{
+    if (!screen_load_cp437(device)) return 0;
+    screen_restore_page(chars, attrs);
+    screen_show(chars, attrs);
+    /* The session loop shows the cursor again after its next update. */
+    batch_update = 1;
+    screen_set_cursor(address(x, y), 0);
+    return 1;
+}
 void ansi_terminal_shutdown(void)
 {
     screen_set_cursor(address(x, y), 0);

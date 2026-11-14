@@ -44,6 +44,9 @@ void platform_restore_speed(uint8_t value)
 }
 void platform_exit(void)
 {
+    uint16_t i;
+    /* The transfer overlay used the VIC text screen for its variables. */
+    for (i = 0x0400; i < 0x07e8; ++i) *(volatile uint8_t *)i = 32;
     clrscr();
     *(volatile uint8_t *)0x033c = saved_key_store[0];
     *(volatile uint8_t *)0x033d = saved_key_store[1];

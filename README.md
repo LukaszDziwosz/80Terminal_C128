@@ -40,6 +40,28 @@ never loses the previous file; comments are not kept when the C128 saves.
 Recent connections are a separate file, so sharing a phonebook never shares
 call history. The disk image starts with `assets/phonebook.txt`.
 
+## File transfers
+
+Press **HELP** during a session to transfer files; the connection stays
+open, and F7 returns to the same terminal screen. Start the transfer on the
+BBS first, then choose it on the C128:
+
+- **F1 Download:** XMODEM. CRC, checksum and 1K blocks are detected from
+  the sender. Enter the file name, choose PRG, SEQ or USR, and the drive
+  (8-30). XMODEM carries no name or exact size, so the file ends with the
+  sender's padding. An existing file is replaced only after **Y**.
+- **F3 Upload:** pick a PRG, SEQ or USR file from the drive's directory,
+  then XMODEM (128-byte blocks) or XMODEM-1K.
+
+Each block is acknowledged only once it is on disk, so a slow drive simply
+pauses the sender. F7 or RUN/STOP cancels; a partial download is kept.
+Telnet binary mode is requested for the transfer; when a board does not
+agree, CR NUL handling keeps every byte intact. ZMODEM is planned.
+
+`tests/transfer_test.c` runs these transfers against `lsz`/`lrz` (lrzsz)
+through a Telnet stand-in, with and without binary mode; `make test` runs it
+when lrzsz is installed.
+
 ## Current baseline
 
 All three adapters—WiC64, 1541 Ultimate II+, and RR-Net—are confirmed working
@@ -78,15 +100,18 @@ there is no suspended session to resume. **F1** retries a failed interface.
 The VIC display stays blank during operation at 2 MHz, including temporary
 1 MHz cartridge accesses, and its display setting is restored on exit.
 
-The screens and the session take turns in one slot at `$3600-$5fff`, as
-three overlays: `uimain` (launcher, main screen, connect form, summary),
-`uibook` (phonebook and recent connections) and `uiterm` (connection,
-Telnet session and the ANSI/VT100/PETSCII terminal). Each is loaded from
+The screens and the session take turns in one slot at `$3700-$5fff`, as
+four overlays: `uimain` (launcher, main screen, connect form, summary),
+`uibook` (phonebook and recent connections), `uiterm` (connection,
+Telnet session and the ANSI/VT100/PETSCII terminal) and `uixfer` (file
+transfers). Each is loaded from
 disk once and kept in C128 RAM bank 1 at its real length; later switches
 copy it back with the KERNAL's INDFET routine. Bank 1 also holds the
-phonebook and recent list. The resident program (platform, adapters'
-interface, Telnet, overlay loader) ends near `$3240`; its variables use the
-free `$1300-$1bff` area and the overlays' variables `$0b00-$0fff`. The
+phonebook, recent list, CP437 font, and the terminal screen during a
+transfer. The resident program (platform, adapters' interface, Telnet,
+disk access, overlay loader) ends near `$3660`; its variables use the free
+`$1300-$1bff` area, the overlays' variables `$0b00-$0fff`, and the
+transfer overlay's the unused VIC text screen at `$0400`. The
 memory map is in `include/memory_map.h` and `include/bank1.h`.
 
 Adapter buffers share the reserved `$6000-$7fff` RAM area. Ultimate's buffers
@@ -125,9 +150,9 @@ the real adapter.
 Connections accept a hostname or dotted IPv4 address. The TCP client uses a
 536-byte MSS, a 2 KB receive queue, retransmission and flow control.
 
-Install Oscar64, ACME and VICE's `c1541`. `make` uses `.tools/oscar64/bin/oscar64`
-if available, or `oscar64` from PATH. The pinned compiler revision is recorded
-in `tools/oscar64-revision.txt`.
+Install Oscar64, ACME and VICE's `c1541`. `make` uses `oscar64` from PATH, or
+falls back to `$OSCAR64_HOME/bin/oscar64` (default `~/Developer/oscar64`). The
+pinned compiler revision is recorded in `tools/oscar64-revision.txt`.
 
 ```
 make all test test-oscar test-vice

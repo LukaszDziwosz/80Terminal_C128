@@ -47,6 +47,8 @@ static uint8_t remote_options;
 static uint8_t local_options;
 static enum telnet_profile current_profile;
 static telnet_send_callback send_bytes;
+/* File transfers: keep 8-bit data intact even without binary mode. */
+static uint8_t transfer_mode, after_cr;
 
 static uint8_t option_flag(uint8_t option)
 {
@@ -200,6 +202,7 @@ void telnet_init(enum telnet_profile profile,
     local_options = 0;
     current_profile = profile;
     send_bytes = send_callback;
+    transfer_mode = after_cr = 0;
 }
 
 uint8_t telnet_receive(uint8_t input, uint8_t* output)
@@ -208,7 +211,16 @@ uint8_t telnet_receive(uint8_t input, uint8_t* output)
     case TELNET_STATE_DATA:
         if (input == TELNET_IAC) {
             state = TELNET_STATE_IAC;
+            after_cr = 0;
             return 0;
+        }
+        if (transfer_mode && (remote_options & TELNET_FLAG_BINARY) == 0) {
+            /* Without binary mode a server sends CR as CR NUL (RFC 854). */
+            if (after_cr && input == 0) {
+                after_cr = 0;
+                return 0;
+            }
+            after_cr = input == 13;
         }
         *output = input;
         return 1;
@@ -281,9 +293,24 @@ void telnet_send_byte(uint8_t value)
     if (value == TELNET_IAC) {
         data[1] = value;
         send_bytes(data, 2);
+    } else if (value == 13 && transfer_mode &&
+               (local_options & TELNET_FLAG_BINARY) == 0) {
+        data[1] = 0;
+        send_bytes(data, 2);
     } else {
         send_bytes(data, 1);
     }
+}
+
+void telnet_set_transfer(uint8_t enabled)
+{
+    transfer_mode = enabled;
+    after_cr = 0;
+}
+
+void telnet_set_sender(telnet_send_callback send_callback)
+{
+    send_bytes = send_callback;
 }
 
 void telnet_request_binary(void)

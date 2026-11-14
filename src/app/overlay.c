@@ -16,7 +16,7 @@ static uint16_t cache_next = BANK1_OVERLAY_CACHE;
 
 #ifndef OVERLAY_TEST
 /* Oscar64 writes each overlay to the D64 under its #pragma overlay name. */
-static const char *const overlay_files[OVERLAY_COUNT] = { p"uimain", p"uibook", p"uiterm" };
+static const char *const overlay_files[OVERLAY_COUNT] = { p"uimain", p"uibook", p"uiterm", p"uixfer" };
 
 uint16_t overlay_disk_load(const char *name)
 {
@@ -30,7 +30,7 @@ uint16_t overlay_disk_load(const char *name)
     return ok ? *(volatile uint16_t *)0xae : 0;
 }
 #else
-static const char *const overlay_files[OVERLAY_COUNT] = { "uimain", "uibook", "uiterm" };
+static const char *const overlay_files[OVERLAY_COUNT] = { "uimain", "uibook", "uiterm", "uixfer" };
 #endif
 
 uint8_t overlay_use(uint8_t id)

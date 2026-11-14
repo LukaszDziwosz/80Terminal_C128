@@ -6,6 +6,7 @@
 #include "platform.h"
 #include "program.h"
 #include "ui.h"
+#include "disk.h"
 
 /* Adapter overlays load once; no overlay pointers survive a change of adapter. */
 static void select_backend(uint8_t choice)
@@ -30,6 +31,7 @@ int main(void)
 {
     uint8_t choice;
     platform_init();
+    disk_device = platform_device();
     if (!overlay_use(OVERLAY_UI_MAIN)) {
         program_message("Could not load uimain. Use the complete disk image.");
     } else {

@@ -8,6 +8,7 @@
 #include "ui.h"
 #include "vdc_screen.h"
 #include "book.h"
+#include "transfer.h"
 #include "memory_map.h"
 
 static int state, calls, polls, sessions, key_index, fail_first, immediate, idle_polls;
@@ -66,7 +67,7 @@ uint8_t platform_device(void) { return 8; }
 uint8_t platform_key_pending(void) { return idle_polls > 0; }
 uint16_t overlay_disk_load(const char *name)
 {
-    assert(!strcmp(name, "uimain") || !strcmp(name, "uibook") || !strcmp(name, "uiterm"));
+    assert(!strcmp(name, "uimain") || !strcmp(name, "uibook") || !strcmp(name, "uiterm") || !strcmp(name, "uixfer"));
     strcpy(last_load, name);
     ++disk_loads;
     return disk_fail ? 0 : UI_SLOT_START + 0x100;
@@ -95,20 +96,35 @@ void bank1_write(uint16_t destination, const void *source, uint16_t length)
 {
     (void)destination; (void)source; (void)length; ++bank1_writes;
 }
+static int transfers, resumes;
+/* The first session of each run presses HELP once: the program loop runs
+ * the transfer overlay, then resumes the same session. */
 void session_run(const struct net_backend *backend, const struct connect_request *request,
-                 struct session_result *result)
+                 struct session_result *result, uint8_t resuming)
 {
-    assert(backend->state() == NET_CLOSED);
-    assert(!strcmp(request->hostname, "a") && request->port == 23);
-    assert(!strcmp(request->name, book_runs ? "A board" : ""));
-    assert(request->profile == TELNET_PROFILE_ANSI_80);
-    /* The Connecting screen is up while the adapter opens. */
-    assert(on_screen(0, "Connecting") && on_screen(6, "a:23"));
+    if (resuming) {
+        assert(transfers == resumes + 1);
+        ++resumes;
+    } else {
+        assert(backend->state() == NET_CLOSED);
+        assert(!strcmp(request->hostname, "a") && request->port == 23);
+        assert(!strcmp(request->name, book_runs ? "A board" : ""));
+        assert(request->profile == TELNET_PROFILE_ANSI_80);
+        /* The Connecting screen is up while the adapter opens. */
+        assert(on_screen(0, "Connecting") && on_screen(6, "a:23"));
+        ++sessions;
+        if (sessions == 1) { result->outcome = SESSION_TRANSFER; return; }
+    }
     result->outcome = SESSION_ENDED;
     strcpy(result->message, "Disconnected.");
     result->detail[0] = 0;
     result->keys = 3; result->sent = 42;
-    ++sessions;
+}
+void transfer_run(const struct net_backend *backend, const struct connect_request *request)
+{
+    (void)backend;
+    assert(!strcmp(request->hostname, "a"));
+    ++transfers;
 }
 static int initialize(void)
 {
@@ -158,7 +174,7 @@ int main(void)
     test_launcher();
     for (int mode = 0; mode < 3; ++mode) {
         calls = polls = sessions = key_index = idle_polls = summaries = 0;
-        book_runs = recents_noted = startups = 0;
+        book_runs = recents_noted = startups = transfers = resumes = 0;
         fail_first = mode == 1; immediate = mode == 2;
         ui_reset();
         program_run(&backend);
@@ -167,11 +183,14 @@ int main(void)
         assert(calls == 2 && sessions == (fail_first ? 2 : 3));
         assert(summaries == sessions && recents_noted == sessions);
         assert(startups == 1 && book_runs == 1);
+        /* One transfer, then back to the same session. */
+        assert(transfers == 1 && resumes == 1);
         assert(idle_polls >= 4);
     }
     /* test_overlay_cache already loaded main and book: only the terminal
-     * came from disk here, once; every other switch was a bank-1 copy. */
-    assert(disk_loads == 1 && bank1_writes == 1 && !strcmp(last_load, "uiterm"));
+     * and the transfer overlay came from disk here, once each; every other
+     * switch was a bank-1 copy. */
+    assert(disk_loads == 2 && bank1_writes == 2);
     assert(bank1_reads > 10);
     puts("Main-screen, connect form, summary and overlay cache tests passed");
     return 0;
