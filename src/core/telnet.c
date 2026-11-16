@@ -200,7 +200,9 @@ void telnet_init(enum telnet_profile profile,
     suboption_length = 0;
     remote_options = 0;
     local_options = 0;
-    current_profile = profile;
+    /* Monochrome is a display choice: negotiate as the colour profile. */
+    current_profile = profile == TELNET_PROFILE_ANSI_MONO_80 ? TELNET_PROFILE_ANSI_80 :
+                      profile == TELNET_PROFILE_VT100_MONO_80 ? TELNET_PROFILE_VT100_80 : profile;
     send_bytes = send_callback;
     transfer_mode = after_cr = 0;
 }
@@ -332,18 +334,23 @@ uint8_t telnet_profile_columns(enum telnet_profile profile)
 
 uint8_t telnet_profile_rows(enum telnet_profile profile)
 {
-    return profile == TELNET_PROFILE_VT100_80 ? 24 : 25;
+    return telnet_profile_is_vt100(profile) ? 24 : 25;
 }
 
 uint8_t telnet_profile_is_ansi(enum telnet_profile profile)
 {
-    return profile == TELNET_PROFILE_ANSI_80 ||
-           profile == TELNET_PROFILE_VT100_80;
+    return profile == TELNET_PROFILE_ANSI_80 || profile == TELNET_PROFILE_ANSI_MONO_80 ||
+           telnet_profile_is_vt100(profile);
 }
 
 uint8_t telnet_profile_is_vt100(enum telnet_profile profile)
 {
-    return profile == TELNET_PROFILE_VT100_80;
+    return profile == TELNET_PROFILE_VT100_80 || profile == TELNET_PROFILE_VT100_MONO_80;
+}
+
+uint8_t telnet_profile_is_mono(enum telnet_profile profile)
+{
+    return profile == TELNET_PROFILE_ANSI_MONO_80 || profile == TELNET_PROFILE_VT100_MONO_80;
 }
 
 const char* telnet_profile_name(enum telnet_profile profile)
@@ -355,6 +362,10 @@ const char* telnet_profile_name(enum telnet_profile profile)
         return "ANSI 80 columns";
     case TELNET_PROFILE_ASCII_80:
         return "Plain ASCII 80 columns";
+    case TELNET_PROFILE_ANSI_MONO_80:
+        return "ANSI mono 80 columns";
+    case TELNET_PROFILE_VT100_MONO_80:
+        return "VT100 mono 80x24";
     default:
         return "VT100 80x24";
     }

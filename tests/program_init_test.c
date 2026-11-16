@@ -15,13 +15,15 @@ static int state, calls, polls, sessions, key_index, fail_first, immediate, idle
 static int disk_loads, disk_fail, bank1_reads, bank1_writes, summaries, book_runs, recents_noted, startups;
 static char last_load[8];
 static uint8_t vdc[0x1000];
-/* F3 opens the connect form: host "a", RETURN, port 23, RETURN, ANSI. Each
+/* F3 opens the connect form: host "a", RETURN, port 23, RETURN, ANSI (or
+ * ANSI mono, after a key that is not a terminal). Each
  * session ends on the summary screen, which waits for a key. On the main
  * screen with the interface down, these keys are ignored. */
 #define CONNECT PETSCII_F3, 'a', 13, 13, '1', ' '
+#define CONNECT_MONO PETSCII_F3, 'a', 13, 13, '9', '4', ' '
 /* F5: the phonebook (stubbed) dials "a" too, then the summary. */
 #define PHONEBOOK PETSCII_F5, ' '
-static const unsigned char keys[] = {CONNECT, PETSCII_F1, CONNECT, PHONEBOOK, PETSCII_F8};
+static const unsigned char keys[] = {CONNECT, PETSCII_F1, CONNECT_MONO, PHONEBOOK, PETSCII_F8};
 static const unsigned char *script = keys;
 static int script_length = (int)sizeof(keys);
 
@@ -109,7 +111,10 @@ void session_run(const struct net_backend *backend, const struct connect_request
         assert(backend->state() == NET_CLOSED);
         assert(!strcmp(request->hostname, "a") && request->port == 23);
         assert(!strcmp(request->name, book_runs ? "A board" : ""));
-        assert(request->profile == TELNET_PROFILE_ANSI_80);
+        /* The second connect form picks "4" (after an ignored key); with
+         * fail_first it is the first session. The phonebook dials ANSI. */
+        assert(request->profile == (!book_runs && sessions == (fail_first ? 0 : 1) ?
+               TELNET_PROFILE_ANSI_MONO_80 : TELNET_PROFILE_ANSI_80));
         /* The Connecting screen is up while the adapter opens. */
         assert(on_screen(0, "Connecting") && on_screen(6, "a:23"));
         ++sessions;

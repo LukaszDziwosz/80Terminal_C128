@@ -31,8 +31,9 @@ LukasSoft BBS|bbs.lukassoft.com|48822|ansi80
 ```
 
 Each line is `name|host|port|mode`, with CR, LF or CRLF line endings. Modes
-are `petscii80`, `ansi80` and `vt100`; `petscii40`, `amiga80` and `ascii80`
-from the 80Terminal mobile app are read as their nearest 80-column mode, and
+are `petscii80`, `ansi80`, `vt100`, `ansi80mono` and `vt100mono`; `petscii40`,
+`amiga80` and `ascii80` (as ANSI mono) from the 80Terminal mobile app are
+read as their nearest 80-column mode, and
 other modes are skipped for now. Names are up to 24 characters and hosts up to 64.
 Fields after the mode are ignored, so later versions can add some. Saving
 writes `phonebook.new` first and then replaces `phonebook`, so a full disk
@@ -70,13 +71,15 @@ connections, disconnecting and reconnecting. The latest VIC blanking and
 F7 disconnect / Ctrl-C passthrough changes were also validated on hardware.
 WiC64 was previously verified with firmware 2.1.0.
 
-After entering the host and port, choose one of three 80-column terminal types:
+After entering the host and port, choose one of five 80-column terminal profiles:
 
 | Key | Mode | Size | Telnet terminal type |
 | --- | --- | --- | --- |
 | 1 | ANSI, with CP437 graphics and colors | 80x25 | `ANSI` |
 | 2 | Native PETSCII | 80x25 | `C128` |
 | 3 | VT100, with DEC special graphics | 80x24 | `VT100` |
+| 4 | ANSI mono: ANSI on a monochrome display | 80x25 | `ANSI` |
+| 5 | VT100 mono: VT100 on a monochrome display | 80x24 | `VT100` |
 
 There is no 40-column PETSCII mode. ANSI and VT100 share the VDC renderer and
 CP437 font. VT100 follows the original `80Terminal_cc65` mode, with G0/G1
@@ -85,6 +88,15 @@ reverse index, configurable tab stops, saved cursor/rendition state, and
 application cursor keys. Both modes support editing controls and terminal
 identification/status replies. VT100 leaves the physical 25th row blank and
 reports 80x24 through Telnet NAWS.
+
+The mono profiles are display variants: the host negotiates ANSI or VT100
+exactly as for the colour profile. The profile is chosen per connection and
+saved with each phonebook and recent entry (`ansi80mono`, `vt100mono`).
+Monochrome uses fixed white-on-black text, retains CP437 and DEC graphics,
+and ignores per-character colour, bold, reverse, underline and blink. It
+writes only character memory, batches printable runs through VDC
+autoincrement, and scrolls and clears without attribute-memory traffic. File
+transfers return to the same display mode and terminal screen.
 
 The separate terminal choices and expanded parser have host and 6502 tests;
 they were added after the adapter hardware validation recorded above.

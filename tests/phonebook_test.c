@@ -28,6 +28,14 @@ int main(void)
     assert(parse("A|h|23|vt100") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_VT100_80);
     assert(parse("A|h|23|petscii40") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_PETSCII_80);
     assert(parse("Retro32|bbs.retro32.com|1337|amiga80") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_ANSI_80);
+    /* Monochrome displays round trip; Flutter's plain text becomes ANSI mono. */
+    assert(parse("A|h|23|vt100mono") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_VT100_MONO_80);
+    n = phonebook_format_line(out, &entry);
+    assert(n == 18 && !memcmp(out, "A|h|23|vt100mono\r\n", 18));
+    assert(parse("A|h|23|Ansi80Mono") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_ANSI_MONO_80);
+    n = phonebook_format_line(out, &entry);
+    assert(n == 19 && !memcmp(out, "A|h|23|ansi80mono\r\n", 19));
+    assert(parse("A|h|23|ascii80") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_ANSI_MONO_80);
     assert(parse("A|h|23|vic20") == PHONEBOOK_LINE_UNSUPPORTED);
     assert(parse("A|h|23|ansi") == PHONEBOOK_LINE_UNSUPPORTED);
     assert(parse("A|h|23|ansi80x") == PHONEBOOK_LINE_UNSUPPORTED);

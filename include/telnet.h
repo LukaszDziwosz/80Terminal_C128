@@ -8,7 +8,11 @@ enum telnet_profile {
     TELNET_PROFILE_PETSCII_80 = 1,
     TELNET_PROFILE_ANSI_80,
     TELNET_PROFILE_VT100_80,
-    TELNET_PROFILE_ASCII_80
+    TELNET_PROFILE_ASCII_80,
+    /* Display variants: the host sees ANSI or VT100; the screen is white on
+     * black without per-character attributes (ansi_terminal.h). */
+    TELNET_PROFILE_ANSI_MONO_80,
+    TELNET_PROFILE_VT100_MONO_80
 };
 
 typedef void (*telnet_send_callback)(const uint8_t* data, uint8_t length);
@@ -30,6 +34,7 @@ uint8_t telnet_profile_columns(enum telnet_profile profile);
 uint8_t telnet_profile_rows(enum telnet_profile profile);
 uint8_t telnet_profile_is_ansi(enum telnet_profile profile);
 uint8_t telnet_profile_is_vt100(enum telnet_profile profile);
+uint8_t telnet_profile_is_mono(enum telnet_profile profile);
 const char* telnet_profile_name(enum telnet_profile profile);
 
 #endif

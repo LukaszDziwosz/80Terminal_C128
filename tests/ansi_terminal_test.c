@@ -11,24 +11,41 @@ static uint8_t *vdc = ram;
 static uint16_t shown_chars, shown_attrs, cursor_address;
 static uint8_t cursor_visible, watch_visible;
 static unsigned flips, visible_writes;
+static uint8_t registers[37];
+static unsigned attribute_writes, write_calls, longest_write;
 
-uint8_t screen_load_cp437(uint8_t device) { return device == 8; }
+uint8_t screen_load_cp437(uint8_t device)
+{
+    uint16_t glyph;
+    if (device != 8) return 0;
+    /* Distinct glyph data in the same split layout as the real loader. */
+    for (glyph = 0; glyph < 256; ++glyph)
+        memset(ram + (glyph < 128 ? 0x3000 + glyph * 16 : 0x2000 + (glyph - 128) * 16),
+               (uint8_t)glyph, 16);
+    return 1;
+}
 void screen_restore_font(void) { ++restored; }
 uint8_t screen_reg_read(uint8_t reg)
 {
     if (reg == 20) return 8;
-    return 0;
+    return registers[reg];
 }
-void screen_reg_write(uint8_t reg, uint8_t value) { (void)reg; (void)value; }
+void screen_reg_write(uint8_t reg, uint8_t value) { registers[reg] = value; }
 static void track(uint16_t at, uint16_t length)
 {
+    if ((at < 0x800 + 2000 && at + length > 0x800) ||
+        (at < 0x1800 + 2000 && at + length > 0x1800)) ++attribute_writes;
     /* A write into the displayed page while a scroll is being built. */
     if (!watch_visible) return;
     if ((at < shown_chars + 2000 && at + length > shown_chars) ||
         (at < shown_attrs + 2000 && at + length > shown_attrs)) ++visible_writes;
 }
 void screen_write_run(uint16_t at, const uint8_t *data, uint16_t length)
-{ track(at, length); memcpy(ram + at, data, length); }
+{
+    ++write_calls;
+    if (length > longest_write) longest_write = length;
+    track(at, length); memcpy(ram + at, data, length);
+}
 void screen_fill_run(uint16_t at, uint8_t value, uint16_t length)
 { track(at, length); memset(ram + at, value, length); }
 void screen_copy_run(uint16_t destination, uint16_t source, uint16_t length)
@@ -131,9 +148,9 @@ static void test_tabs_modes_and_reset(void)
     feed("\033[42n"); expect_reply("");
     ansi_terminal_shutdown();
 }
-static void test_editing_and_wrap(void)
+static void test_editing_and_wrap(uint8_t mode)
 {
-    start(1);
+    start(mode);
     feed("ABCDE\033[1;2H\033[2@xy"); assert(!memcmp(vdc, "AxyBCDE", 7));
     feed("\033[1;2H\033[2P"); assert(!memcmp(vdc, "ABCDE", 5));
     feed("\033[4hZ\033[4l"); assert(!memcmp(vdc, "AZBCDE", 6));
@@ -228,6 +245,93 @@ static void test_suspend_resume(void)
     assert(!ansi_terminal_resume(9));  /* no font on device 9 */
 }
 
+static void test_monochrome(void)
+{
+    uint8_t line[80], mode;
+    uint16_t i, last_row;
+    unsigned before;
+    for (mode = ANSI_TERMINAL_MONOCHROME;
+         mode <= (ANSI_TERMINAL_MONOCHROME | ANSI_TERMINAL_VT100); ++mode) {
+        registers[25] = 0x47;
+        registers[26] = 0x62;
+        attribute_writes = 0;
+        start(mode);
+        assert(registers[25] == 7 && registers[26] == 0xf0);
+        assert(attribute_writes == 0);
+        for (i = 0; i < 4096; ++i) assert(ram[0x2000 + i] == (uint8_t)(i / 16));
+
+        memset(line, 'A', sizeof(line));
+        ansi_terminal_begin_update();
+        write_calls = longest_write = 0;
+        ansi_terminal_receive_buffer(line, sizeof(line));
+        ansi_terminal_flush();
+        assert(write_calls == 1 && longest_write == 80);
+        assert(!memcmp(vdc, line, sizeof(line)) && !cursor_visible);
+        ansi_terminal_end_update();
+        assert(cursor_visible && cursor_address == 79);
+
+        feed("\033[H\xb0\xb1\xb2\033[1;31;44;4;5;7mX\033[0m");
+        assert(vdc[0] == 0xb0 && vdc[1] == 0xb1 && vdc[2] == 0xb2 && vdc[3] == 'X');
+        assert(registers[26] == 0xf0 && attribute_writes == 0);
+        feed("\033[2;1H\033(0lqk\033(B");
+        if (mode & ANSI_TERMINAL_VT100) {
+            assert(vdc[80] == 0xda && vdc[81] == 0xc4 && vdc[82] == 0xbf);
+            feed("\033[25;1HX");
+            assert(vdc[23 * 80] == 'X' && vdc[24 * 80] == ' ');
+        } else {
+            assert(!memcmp(vdc + 80, "lqk", 3));
+            feed("\033[25;1HX");
+            assert(vdc[24 * 80] == 'X');
+        }
+        before = flips; watch_visible = 1; visible_writes = 0;
+        feed("\n");
+        assert(flips == before + 1 && visible_writes == 0 && attribute_writes == 0);
+
+        ansi_terminal_begin_update();
+        feed("\033[2J\033[25;79HABCD");
+        ansi_terminal_end_update();
+        last_row = mode & ANSI_TERMINAL_VT100 ? 23 : 24;
+        assert(vdc[(last_row - 1) * 80 + 78] == 'A');
+        assert(vdc[(last_row - 1) * 80 + 79] == 'B');
+        assert(vdc[last_row * 80] == 'C' && vdc[last_row * 80 + 1] == 'D');
+        ansi_terminal_begin_update();
+        feed("\033[2J\033[HX\033[255b");
+        ansi_terminal_end_update();
+        for (i = 0; i < 256; ++i) assert(vdc[i] == 'X');
+        assert(vdc[256] == ' ');
+
+        /* Suspend flushes the tail of a batch and restores KERNAL colours. */
+        ansi_terminal_begin_update();
+        feed("\033[H\xb0Text");
+        ansi_terminal_suspend();
+        assert(registers[25] == 0x47 && registers[26] == 0x62);
+        memset(ram, 'Z', 0x2000);
+        assert(!ansi_terminal_resume(9));
+        assert(registers[25] == 0x47 && registers[26] == 0x62);
+        assert(ansi_terminal_resume(8));
+        assert(registers[25] == 7 && registers[26] == 0xf0);
+        assert(vdc[0] == 0xb0 && !memcmp(vdc + 1, "Text", 4));
+        for (i = 0; i < 4096; ++i) assert(ram[0x2000 + i] == (uint8_t)(i / 16));
+
+        /* Each network batch commits even when an escape remains incomplete. */
+        feed("!\033[");
+        ansi_terminal_end_update();
+        assert(vdc[5] == '!' && !cursor_visible);
+        feed("m?");
+        ansi_terminal_end_update();
+        assert(vdc[6] == '?' && cursor_visible && cursor_address == 7);
+        assert(attribute_writes == 0);
+        ansi_terminal_shutdown();
+        assert(registers[25] == 0x47 && registers[26] == 0x62);
+        assert(shown_chars == 0 && shown_attrs == 0x800);
+    }
+    attribute_writes = 0;
+    start(0);
+    feed("\033[31mColour");
+    assert(attribute_writes && vdc[0x800] == 0x88);
+    ansi_terminal_shutdown();
+}
+
 int main(void)
 {
     uint8_t key[5];
@@ -270,9 +374,13 @@ int main(void)
     test_margins_and_reverse_index();
     test_bold_is_independent_of_colour_order();
     test_tabs_modes_and_reset();
-    test_editing_and_wrap();
+    test_editing_and_wrap(ANSI_TERMINAL_VT100);
+    attribute_writes = 0;
+    test_editing_and_wrap(ANSI_TERMINAL_VT100 | ANSI_TERMINAL_MONOCHROME);
+    assert(attribute_writes == 0);
     test_scroll_page_flip();
     test_suspend_resume();
+    test_monochrome();
     puts("ANSI and VT100 terminal parser tests passed");
     return 0;
 }

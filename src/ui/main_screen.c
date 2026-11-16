@@ -21,6 +21,7 @@
 #pragma optimize(push, size, outline)
 #endif
 #include "draw.h"
+#include "terminal_choice.h"
 #ifdef __OSCAR64C__
 #define UI_ENTRY __noinline
 #else
@@ -47,8 +48,7 @@ static const char *const main_keys[] = {
     "F1", "Retry", "F3", "Connect", "F5", "Phonebook", "1-9", "Recent", "F8", "Quit", 0 };
 static const char *const edit_keys[] = {
     "RETURN", "Next", "DEL", "Erase", "HOME", "Clear", "F7", "Cancel", 0 };
-static const char *const profile_keys[] = {
-    "1", "ANSI", "2", "PETSCII", "3", "VT100", "F7", "Cancel", 0 };
+static const char *const profile_keys[] = { "1-5", "Terminal", "F7", "Cancel", 0 };
 static const char *const cancel_keys[] = { "F7", "Cancel", 0 };
 static const char *const any_key[] = { "Any key", "Main screen", 0 };
 
@@ -165,9 +165,8 @@ static void draw_recent(void)
         ui_text(LABEL_COL, row, digit, UI_ACTION);
         ui_text_field(8, row, 26, recent.name, UI_HEADING);
         format_target(recent.hostname, recent.port);
-        ui_text_field(34, row, 34, target, UI_INFO);
-        ui_text(69, row, recent.profile == TELNET_PROFILE_PETSCII_80 ? "PETSCII" :
-                         recent.profile == TELNET_PROFILE_VT100_80 ? "VT100" : "ANSI", UI_MUTED);
+        ui_text_field(34, row, 31, target, UI_INFO);
+        ui_text(66, row, terminal_label(recent.profile), UI_MUTED);
     }
 }
 static void draw_main(const struct net_backend *backend)
@@ -273,16 +272,14 @@ static uint8_t connect_form(const struct net_backend *backend, struct connect_re
     }
     request->port = port;
     ui_text(LABEL_COL, PROFILE_ROW, "Terminal", UI_MUTED);
-    ui_text(VALUE_COL, PROFILE_ROW, "1", UI_ACTION); ui_text(18, PROFILE_ROW, "ANSI 80x25", UI_TEXT);
-    ui_text(32, PROFILE_ROW, "2", UI_ACTION); ui_text(34, PROFILE_ROW, "PETSCII 80x25", UI_TEXT);
-    ui_text(51, PROFILE_ROW, "3", UI_ACTION); ui_text(53, PROFILE_ROW, "VT100 80x24", UI_TEXT);
-    ui_text(LABEL_COL, 14, "ANSI: CP437 and colour. VT100: DEC graphics and terminal controls.", UI_MUTED);
-    ui_text(LABEL_COL, 15, "During a session: F7 disconnects; CTRL-C goes to the host.", UI_MUTED);
+    terminal_choices(VALUE_COL, PROFILE_ROW);
+    ui_text_field(LABEL_COL, 14, 70, "ANSI: CP437, 80x25. VT100: DEC graphics, 80x24. PETSCII: C128, 80x25.", UI_MUTED);
+    ui_text(LABEL_COL, 15, "Mono: white text without colour attributes, for faster output.", UI_MUTED);
+    ui_text(LABEL_COL, 16, "During a session: F7 disconnects; CTRL-C goes to the host.", UI_MUTED);
     ui_keys(profile_keys);
     do { key = wait_key(backend); if (cancelled(key)) return 0; }
-    while (key != '1' && key != '2' && key != '3');
-    request->profile = key == '1' ? TELNET_PROFILE_ANSI_80 :
-                       key == '2' ? TELNET_PROFILE_PETSCII_80 : TELNET_PROFILE_VT100_80;
+    while (!terminal_for_key(key));
+    request->profile = (enum telnet_profile)terminal_for_key(key);
     return 1;
 }
 /* Drawn before the resident session starts the (possibly blocking) open;

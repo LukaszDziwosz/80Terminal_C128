@@ -136,6 +136,21 @@ static void test_window_size(void)
     assert(telnet_profile_rows(TELNET_PROFILE_VT100_80) == 24);
     assert(telnet_profile_is_ansi(TELNET_PROFILE_VT100_80));
     assert(telnet_profile_is_vt100(TELNET_PROFILE_VT100_80));
+
+    /* Monochrome profiles negotiate exactly as their colour profiles. */
+    reset(TELNET_PROFILE_ANSI_MONO_80);
+    feed(request, sizeof(request));
+    expect_sent(expected_80, sizeof(expected_80));
+    reset(TELNET_PROFILE_VT100_MONO_80);
+    feed(request, sizeof(request));
+    expect_sent(expected_vt100, sizeof(expected_vt100));
+    assert(telnet_profile_rows(TELNET_PROFILE_VT100_MONO_80) == 24);
+    assert(telnet_profile_rows(TELNET_PROFILE_ANSI_MONO_80) == 25);
+    assert(telnet_profile_is_ansi(TELNET_PROFILE_ANSI_MONO_80) && !telnet_profile_is_vt100(TELNET_PROFILE_ANSI_MONO_80));
+    assert(telnet_profile_is_ansi(TELNET_PROFILE_VT100_MONO_80) && telnet_profile_is_vt100(TELNET_PROFILE_VT100_MONO_80));
+    assert(telnet_profile_is_mono(TELNET_PROFILE_ANSI_MONO_80) && telnet_profile_is_mono(TELNET_PROFILE_VT100_MONO_80));
+    assert(!telnet_profile_is_mono(TELNET_PROFILE_ANSI_80) && !telnet_profile_is_mono(TELNET_PROFILE_VT100_80));
+    assert(!telnet_profile_is_mono(TELNET_PROFILE_PETSCII_80));
 }
 
 static void test_subnegotiation_is_not_displayed(void)

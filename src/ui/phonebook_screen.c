@@ -26,6 +26,7 @@
 #define BOOK_ENTRY
 #endif
 #include "draw.h"
+#include "terminal_choice.h"
 /* The file format code is only needed here, so it is part of this overlay. */
 #include "../core/phonebook.c"
 
@@ -36,7 +37,7 @@ typedef char entry_fits_stride[sizeof(struct phonebook_entry) <= BANK1_ENTRY_STR
 #define NOTE_ROW 21
 #define NAME_COL 5
 #define HOST_COL 31
-#define MODE_COL 69
+#define MODE_COL 66
 
 /* bookbss: outside the overlay file, set before use. */
 static struct phonebook_entry entry;
@@ -53,7 +54,7 @@ static const char *const list_keys[] = {
 static const char *const edit_keys[] = {
     "RETURN", "Next", "DEL", "Erase", "HOME", "Clear", "F7", "Cancel", 0 };
 static const char *const profile_keys[] = {
-    "1", "ANSI", "2", "PETSCII", "3", "VT100", "RETURN", "Keep", "F7", "Cancel", 0 };
+    "1-5", "Terminal", "RETURN", "Keep", "F7", "Cancel", 0 };
 static const char *const confirm_keys[] = { "Y", "Delete", "N", "Keep", 0 };
 
 
@@ -219,11 +220,6 @@ static uint8_t wait_key(const struct net_backend *backend)
     while (!platform_key_pending()) backend->poll();
     return (uint8_t)getch();
 }
-static const char *mode_label(enum telnet_profile profile)
-{
-    return profile == TELNET_PROFILE_PETSCII_80 ? "PETSCII" :
-           profile == TELNET_PROFILE_VT100_80 ? "VT100" : "ANSI";
-}
 static void host_port(const struct phonebook_entry *e)
 {
     char digits[5], *out = text;
@@ -246,7 +242,7 @@ static void draw_row(uint8_t row)
     ui_text_field(4, y, 1, "", bar ? UI_BAR : UI_TEXT);
     ui_text_field(NAME_COL, y, HOST_COL - NAME_COL, entry.name, bar ? UI_BAR : UI_HEADING);
     ui_text_field(HOST_COL, y, MODE_COL - HOST_COL, text, bar ? UI_BAR : UI_INFO);
-    ui_text_field(MODE_COL, y, 7, mode_label(entry.profile), bar ? UI_BAR : UI_MUTED);
+    ui_text_field(MODE_COL, y, 10, terminal_label(entry.profile), bar ? UI_BAR : UI_MUTED);
 }
 static void draw_list(void)
 {
@@ -320,7 +316,7 @@ static uint8_t edit_entry(const struct net_backend *backend, const char *heading
         do { port_text[--i] = (char)('0' + port % 10); port /= 10; } while (port);
         memmove(port_text, port_text + i, (uint8_t)(6 - i));
         ui_text_field(16, 8, 6, port_text, UI_HEADING);
-        ui_text_field(16, 10, 8, mode_label(entry.profile), UI_HEADING);
+        ui_text_field(16, 10, 10, terminal_label(entry.profile), UI_HEADING);
         ui_text(NAME_COL, 14, "Name up to 24 characters; hostname or IPv4 address; port 1-65535.", UI_MUTED);
         ui_keys(edit_keys);
         if (!edit(backend, 4, 25, entry.name, PHONEBOOK_NAME_SIZE, 2) ||
@@ -338,16 +334,13 @@ static uint8_t edit_entry(const struct net_backend *backend, const char *heading
         wait_key(backend);
     }
     entry.port = port;
-    ui_text(30, 10, "1", UI_ACTION); ui_text(32, 10, "ANSI", UI_TEXT);
-    ui_text(39, 10, "2", UI_ACTION); ui_text(41, 10, "PETSCII", UI_TEXT);
-    ui_text(51, 10, "3", UI_ACTION); ui_text(53, 10, "VT100", UI_TEXT);
+    terminal_choices(16, 11);
+    ui_text_field(NAME_COL, 14, 70, "Mono: white text without colour attributes, for faster output.", UI_MUTED);
     ui_keys(profile_keys);
     for (;;) {
         key = wait_key(backend);
         if (cancelled(key)) return 0;
-        if (key == '1') entry.profile = TELNET_PROFILE_ANSI_80;
-        else if (key == '2') entry.profile = TELNET_PROFILE_PETSCII_80;
-        else if (key == '3') entry.profile = TELNET_PROFILE_VT100_80;
+        if (terminal_for_key(key)) entry.profile = (enum telnet_profile)terminal_for_key(key);
         else if (!is_return(key)) continue;
         return 1;
     }

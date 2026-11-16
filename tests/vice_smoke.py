@@ -260,10 +260,16 @@ def check(m, labels, mm, shots=None):
     rows = wait_text(m, 'Saved boards 1/50')
     assert 'Phonebook' in rows[0] and 'LukasSoft BBS' in rows[4] and 'bbs.lukassoft.com:48822' in rows[4], rows[4]
     print('PASS: phonebook overlay lists the board from the disk file', flush=True)
-    # F1: add a board, keep port 23, choose VT100; it is saved to disk.
-    type_keys(m, bytes([0x85]) + petscii('Test board') + b'\r' + petscii('test.example') + b'\r' + b'\r' + b'3')
+    # F1: add a board, keep port 23, choose VT100 mono; it is saved to disk.
+    type_keys(m, bytes([0x85]) + petscii('Test board') + b'\r' + petscii('test.example') + b'\r' + b'\r')
+    rows = wait_text(m, '5 VT100 mono')
+    assert '1 ANSI  2 PETSCII  3 VT100  4 ANSI mono  5 VT100 mono' in rows[11], rows[11]
+    if shots:
+        m.capture(shots / 'phonebook-edit.png')
+    type_keys(m, b'5')
     rows = wait_text(m, 'Phonebook saved.', timeout=120)
     assert any('Saved boards 2/50' in r for r in rows) and 'Test board' in rows[5], rows[4:6]
+    assert 'VT100 mono' in rows[5] and 'ANSI' in rows[4], rows[4:6]
     if shots:
         m.capture(shots / 'phonebook.png')
     print('PASS: a board added in the editor is listed and saved', flush=True)
@@ -336,7 +342,7 @@ def main():
     subprocess.run(['c1541', '-attach', str(disk), '-read', 'phonebook,s', str(saved)],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     expected = (b'80TPB 1\r\nLukasSoft BBS|bbs.lukassoft.com|48822|ansi80\r\n'
-                b'Test board|test.example|23|vt100\r\n')
+                b'Test board|test.example|23|vt100mono\r\n')
     assert saved.read_bytes() == expected, saved.read_bytes()
     print('PASS: the D64 holds the saved phonebook file, in the shareable text format', flush=True)
 

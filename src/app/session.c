@@ -22,6 +22,7 @@ static char end_status[80];
 static uint16_t out_length, out_offset;
 static uint8_t out_overflow;
 static enum telnet_profile profile;
+static uint8_t display_flags;
 /* Kept across a transfer. */
 static uint16_t key_count, tx_count, last_receive;
 static uint8_t petscii_escape, cursor_pending, saved_row, saved_col;
@@ -133,7 +134,7 @@ static void terminal(const struct net_backend *backend, struct session_result *r
         key_count = tx_count = last_receive = 0;
         petscii_escape = cursor_pending = 0;
         telnet_init(profile, enqueue);
-        if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), telnet_profile_is_vt100(profile))) {
+        if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), display_flags)) {
             result->outcome = SESSION_ENDED;
             copy_text(result->message, "Could not load CP437 font from the boot disk.");
             result->detail[0] = 0;
@@ -168,6 +169,7 @@ static void terminal(const struct net_backend *backend, struct session_result *r
             }
         }
         if (ascii_mode && count) {
+            ansi_terminal_flush();
             last_receive = platform_ticks();
             cursor_pending = 1;
         } else if (ascii_mode && cursor_pending &&
@@ -215,6 +217,8 @@ __noinline void session_run(const struct net_backend *backend, const struct conn
         return;
     }
     profile = request->profile;
+    display_flags = (telnet_profile_is_vt100(profile) ? ANSI_TERMINAL_VT100 : 0) |
+                    (telnet_profile_is_mono(profile) ? ANSI_TERMINAL_MONOCHROME : 0);
     result->outcome = SESSION_NONE;
     /* The UI has drawn the "Connecting" screen. Some transports (WiC64)
      * open TCP in one firmware request, so it is visible during the wait. */

@@ -41,6 +41,33 @@ static uint8_t tabs[10], last_printable;
 /* bright: the colour itself is intense (default white, SGR 90-97); bold: SGR 1. */
 static uint8_t fg, bg, bright, bold, reverse, under, blink;
 static uint8_t saved_modes[15];
+static uint8_t monochrome, original_control, original_color;
+/* Printable monochrome runs reach R31 together, using its autoincrement. */
+static uint8_t output[W], output_length;
+static uint16_t output_address;
+
+void ansi_terminal_flush(void)
+{
+    if (!output_length) return;
+    screen_write_run(output_address, output, output_length);
+    output_length = 0;
+}
+static void monochrome_display(void)
+{
+    if (!monochrome) return;
+    /* The colour font splits CP437 across two font banks. With attributes
+     * disabled, put all 256 glyphs in the normal bank, in byte-code order. */
+    screen_copy_run(0x2800, 0x2000, 2048);
+    screen_copy_run(0x2000, 0x3000, 2048);
+    screen_reg_write(26, 0xf0);
+    screen_reg_write(25, original_control & 0xbf);
+}
+static void restore_display(void)
+{
+    if (!monochrome) return;
+    screen_reg_write(25, original_control);
+    screen_reg_write(26, original_color);
+}
 
 static void save_state(void)
 {
@@ -89,7 +116,12 @@ static uint16_t attr_address(uint8_t col, uint8_t row)
 static uint8_t parameter(uint8_t n, uint8_t fallback)
 { return n >= count || !params[n] ? fallback : params[n]; }
 static void cursor(void)
-{ if (!batch_update) screen_set_cursor(address(x, y), cursor_visible); }
+{
+    if (!batch_update) {
+        ansi_terminal_flush();
+        screen_set_cursor(address(x, y), cursor_visible);
+    }
+}
 void ansi_terminal_begin_update(void)
 {
     if (!batch_update) screen_set_cursor(address(x, y), 0);
@@ -97,6 +129,7 @@ void ansi_terminal_begin_update(void)
 }
 void ansi_terminal_end_update(void)
 {
+    ansi_terminal_flush();
     if (!batch_update || state != ST_TEXT) return;
     batch_update = 0;
     cursor();
@@ -111,13 +144,13 @@ static void clear_line(uint8_t row, uint8_t first, uint8_t last)
 {
     if (first > last || row >= H) return;
     screen_fill_run(address(first, row), 0x20, (uint16_t)(last - first + 1));
-    screen_fill_run(attr_address(first, row), attr | 0x80, (uint16_t)(last - first + 1));
+    if (!monochrome) screen_fill_run(attr_address(first, row), attr | 0x80, (uint16_t)(last - first + 1));
 }
 static void clear_screen(uint8_t first, uint8_t last)
 {
     if (first > last || last >= H) return;
     screen_fill_run(address(0, first), 0x20, (uint16_t)(last - first + 1) * W);
-    screen_fill_run(attr_address(0, first), attr | 0x80, (uint16_t)(last - first + 1) * W);
+    if (!monochrome) screen_fill_run(attr_address(0, first), attr | 0x80, (uint16_t)(last - first + 1) * W);
 }
 /* Copy rows from the visible page to the same or another row of the hidden one. */
 static void copy_rows(uint8_t to, uint8_t from, uint8_t rows)
@@ -125,13 +158,13 @@ static void copy_rows(uint8_t to, uint8_t from, uint8_t rows)
     uint16_t length = (uint16_t)rows * W;
     if (!rows) return;
     screen_copy_run((chars ^ PAGE_FLIP) + (uint16_t)to * W, chars + (uint16_t)from * W, length);
-    screen_copy_run((attrs ^ PAGE_FLIP) + (uint16_t)to * W, attrs + (uint16_t)from * W, length);
+    if (!monochrome) screen_copy_run((attrs ^ PAGE_FLIP) + (uint16_t)to * W, attrs + (uint16_t)from * W, length);
 }
 static void blank_hidden_rows(uint8_t first, uint8_t rows)
 {
     uint16_t length = (uint16_t)rows * W;
     screen_fill_run((chars ^ PAGE_FLIP) + (uint16_t)first * W, 0x20, length);
-    screen_fill_run((attrs ^ PAGE_FLIP) + (uint16_t)first * W, attr | 0x80, length);
+    if (!monochrome) screen_fill_run((attrs ^ PAGE_FLIP) + (uint16_t)first * W, attr | 0x80, length);
 }
 /* Rows outside the scroll region, including VT100's blank 25th row, are
  * copied unchanged; then the hidden page becomes the visible one. */
@@ -165,19 +198,20 @@ static void scroll_down(uint8_t top, uint8_t bottom, uint8_t lines)
 static void edit_characters(uint8_t n, uint8_t insert)
 {
     uint8_t col;
+    ansi_terminal_flush();
     if (n > W - x) n = W - x;
     if (insert) {
         /* Rightward overlapping copies must also proceed backwards. */
         for (col = W; col > x + n;) {
             --col;
             screen_copy_run(address(col, y), address(col - n, y), 1);
-            screen_copy_run(attr_address(col, y), attr_address(col - n, y), 1);
+            if (!monochrome) screen_copy_run(attr_address(col, y), attr_address(col - n, y), 1);
         }
         clear_line(y, x, x + n - 1);
     } else {
         if (n < W - x) {
             screen_copy_run(address(x, y), address(x + n, y), W - x - n);
-            screen_copy_run(attr_address(x, y), attr_address(x + n, y), W - x - n);
+            if (!monochrome) screen_copy_run(attr_address(x, y), attr_address(x + n, y), W - x - n);
         }
         clear_line(y, W - n, W - 1);
     }
@@ -195,6 +229,7 @@ static uint8_t dec_graphics(uint8_t value)
 }
 static void line_feed(void)
 {
+    ansi_terminal_flush();
     wrap = 0;
     if (newline_mode) x = 0;
     if (y == scroll_bottom) scroll_up(scroll_top, scroll_bottom, 1);
@@ -203,15 +238,24 @@ static void line_feed(void)
 static void put(uint8_t value)
 {
     uint8_t glyph, a;
+    uint16_t at;
     if (wrap) { x = 0; line_feed(); }
     last_printable = value;
     if (vt100_enabled && (active_charset ? g1_graphics : g0_graphics))
         value = dec_graphics(value);
     if (insert_mode) edit_characters(1, 1);
-    glyph = value >= 128 ? value & 0x7f : value;
-    a = attr | (value < 128 ? 0x80 : 0);
-    screen_write_run(address(x, y), &glyph, 1);
-    screen_write_run(attr_address(x, y), &a, 1);
+    if (monochrome) {
+        at = address(x, y);
+        if (output_length == sizeof(output) ||
+            (output_length && at != output_address + output_length)) ansi_terminal_flush();
+        if (!output_length) output_address = at;
+        output[output_length++] = value;
+    } else {
+        glyph = value >= 128 ? value & 0x7f : value;
+        a = attr | (value < 128 ? 0x80 : 0);
+        screen_write_run(address(x, y), &glyph, 1);
+        screen_write_run(attr_address(x, y), &a, 1);
+    }
     if (x == W - 1) wrap = autowrap;
     else ++x;
 }
@@ -243,6 +287,7 @@ static void report(uint8_t kind)
 static void sgr(void)
 {
     uint8_t i;
+    if (monochrome) return;
     /* Preserve current state only for successive SGRs; SGR 0 resets. */
     for (i = 0; i < count; ++i) {
         uint8_t p = params[i];
@@ -314,26 +359,35 @@ static void csi(uint8_t final)
         break;
     }
 }
-uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t vt100_mode)
+uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t mode_flags)
 {
     if (!screen_load_cp437(device)) return 0;
+    monochrome = mode_flags & ANSI_TERMINAL_MONOCHROME;
+    output_length = 0;
+    original_control = screen_reg_read(25);
+    original_color = screen_reg_read(26);
     original_chars = ((uint16_t)screen_reg_read(12) << 8) | screen_reg_read(13);
     original_attrs = ((uint16_t)screen_reg_read(20) << 8) | screen_reg_read(21);
     /* KERNAL 80-column pages: $0000/$0800, with $1000/$1800 free below the
      * fonts at $2000. Start on the low pair whatever the editor used. */
     chars = original_chars & ~PAGE_FLIP; attrs = original_attrs & ~PAGE_FLIP;
+    monochrome_display();
     screen_show(chars, attrs);
-    send_bytes = send; vt100_enabled = vt100_mode; height = vt100_mode ? 24 : 25;
+    send_bytes = send; vt100_enabled = mode_flags & ANSI_TERMINAL_VT100;
+    height = vt100_enabled ? 24 : 25;
     state = ST_TEXT; reset_state(); batch_update = 1;
     screen_set_cursor(address(x, y), 0);
     /* Clear the physical 25th row too; VT100 never renders into it. */
-    screen_fill_run(chars, ' ', CELLS); screen_fill_run(attrs, attr | 0x80, CELLS);
+    screen_fill_run(chars, ' ', CELLS);
+    if (!monochrome) screen_fill_run(attrs, attr | 0x80, CELLS);
     return 1;
 }
 void ansi_terminal_suspend(void)
 {
+    ansi_terminal_flush();
     screen_set_cursor(address(x, y), 0);
     screen_save_page(chars, attrs);
+    restore_display();
     screen_show(original_chars, original_attrs);
     screen_restore_font();
 }
@@ -341,6 +395,7 @@ uint8_t ansi_terminal_resume(uint8_t device)
 {
     if (!screen_load_cp437(device)) return 0;
     screen_restore_page(chars, attrs);
+    monochrome_display();
     screen_show(chars, attrs);
     /* The session loop shows the cursor again after its next update. */
     batch_update = 1;
@@ -349,13 +404,17 @@ uint8_t ansi_terminal_resume(uint8_t device)
 }
 void ansi_terminal_shutdown(void)
 {
+    ansi_terminal_flush();
     screen_set_cursor(address(x, y), 0);
     /* The KERNAL screen editor writes to its own page: show that again. */
+    restore_display();
     screen_show(original_chars, original_attrs);
     screen_restore_font();
 }
 void ansi_terminal_receive(uint8_t value)
 {
+    /* Commit text before a control sequence can move, erase or copy it. */
+    if (value < 32 || state != ST_TEXT) ansi_terminal_flush();
     if (value == ESC && state != ST_STRING && state != ST_STRING_ESC) {
         wrap = 0; state = ST_ESC; return;
     }
