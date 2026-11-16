@@ -16,7 +16,8 @@
 #define OVERLAY_UI_BOOK 1  /* phonebook and recent connections */
 #define OVERLAY_UI_TERM 2  /* the session: connect, terminal loop, renderers */
 #define OVERLAY_UI_XFER 3  /* file transfers, during a session */
-#define OVERLAY_COUNT   4
+#define OVERLAY_UI_IRC  4  /* IRC server form and chat */
+#define OVERLAY_COUNT   5
 #define OVERLAY_NONE 0xff
 
 /* Returns 1 once the overlay is in its slot, or 0 if the disk load failed. */

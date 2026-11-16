@@ -9,6 +9,8 @@
 #include "ui.h"
 #include "book.h"
 #include "transfer.h"
+#include "ircui.h"
+#include "ircconfig.h"
 
 #if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
 #pragma bss(lowbss)
@@ -17,6 +19,15 @@ static struct connect_request request;
 static struct session_result result;
 struct book_state book;
 uint8_t session_buffer[1024];
+#if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
+#pragma bss(bss)
+#endif
+
+uint8_t irc_config_loaded;
+#if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
+#pragma bss(irccfg)
+#endif
+struct irc_settings irc_config;
 #if defined(__OSCAR64C__) && !defined(PROGRAM_TEST)
 #pragma bss(bss)
 #endif
@@ -51,6 +62,11 @@ void program_run(const struct net_backend *backend)
         if (!use(OVERLAY_UI_MAIN)) break;
         action = ui_main(backend, &request, &result);
         if (action == UI_QUIT) break;
+        if (action == UI_IRC) {
+            if (!use(OVERLAY_UI_IRC)) break;
+            irc_run(backend);
+            continue;
+        }
         if (action == UI_PHONEBOOK) {
             if (!use(OVERLAY_UI_BOOK)) break;
             if (book_run(backend, &request) != UI_CONNECT) continue;

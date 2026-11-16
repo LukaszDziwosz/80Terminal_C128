@@ -11,6 +11,7 @@
 #define PETSCII_CURSOR_UP 0x91
 #define PETSCII_CURSOR_DOWN 0x11
 #define PETSCII_F1 0x85
+#define PETSCII_F2 0x89
 #define PETSCII_F3 0x86
 #define PETSCII_F5 0x87
 #define PETSCII_F7 0x88

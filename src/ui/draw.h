@@ -128,6 +128,8 @@ static void ui_keys(const char *const *pairs)
         pairs += 2;
     }
 }
+/* An overlay without panels defines UI_NO_PANEL before including this. */
+#ifndef UI_NO_PANEL
 static void ui_panel(uint8_t row, uint8_t height, const char *heading)
 {
     uint8_t r, last = (uint8_t)(row + height - 1);
@@ -148,5 +150,6 @@ static void ui_panel(uint8_t row, uint8_t height, const char *heading)
         ui_text(r, row, " ", UI_RIM);
     }
 }
+#endif
 
 #endif

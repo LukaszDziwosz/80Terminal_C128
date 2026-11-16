@@ -11,7 +11,7 @@ struct connect_request {
     uint16_t port;
     enum telnet_profile profile;
 };
-enum ui_action { UI_QUIT = 0, UI_CONNECT = 1, UI_PHONEBOOK = 2, UI_BACK = 3 };
+enum ui_action { UI_QUIT = 0, UI_CONNECT = 1, UI_PHONEBOOK = 2, UI_BACK = 3, UI_IRC = 4 };
 
 /* Filled by the resident session; the UI shows it, then clears outcome. */
 enum session_outcome {
@@ -35,9 +35,14 @@ struct session_result {
 uint8_t ui_launcher(void);
 /* Main screen: the last session's summary if there is one, interface
  * initialization and retry, and the connect form. Returns UI_CONNECT with
- * request filled in and the "Connecting" screen drawn, or UI_QUIT. */
+ * request filled in and the "Connecting" screen drawn, UI_PHONEBOOK,
+ * UI_IRC (the interface is ready), or UI_QUIT. */
 uint8_t ui_main(const struct net_backend *backend, struct connect_request *request,
                 struct session_result *result);
+/* The IRC server form (ircconfig.h), also reached with F2 from ui_main:
+ * reads the "irc" settings file once, and saves it when a setting changes.
+ * Returns 1 with valid settings in irc_config, or 0 if cancelled. */
+uint8_t ui_irc_form(const struct net_backend *backend);
 /* Forget the interface state so the next ui_main() initializes it again. */
 void ui_reset(void);
 /* For a request from the phonebook: waits for the adapter and draws the

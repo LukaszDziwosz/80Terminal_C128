@@ -7,12 +7,39 @@ one network adapter at a time: WiC64, Ultimate II+, or RR-Net.
 
 Device selection is a one-time launch step: F1 RR-Net, F3 Ultimate II+,
 F5 WiC64, F8 back to BASIC. The selected adapter stays loaded while the main
-screen owns connections: F1 retries interface initialization, F3 connects by
-address, F5 opens the phonebook, keys 1-9 dial a recent connection, and F8
-exits to BASIC. Cancelling or disconnecting returns to the main screen, after
+screen owns connections: F1 retries interface initialization, F2 opens IRC,
+F3 connects by address, F5 opens the phonebook, keys 1-9 dial a recent
+connection, and F8 exits to BASIC. Cancelling or disconnecting returns to the main screen, after
 a summary of the session.
 
 ![Alt text](screenshots/Main.png)
+
+## IRC
+
+**F2** on the main screen opens the IRC client, on the same adapter as the
+terminal. Enter the server, port, nickname and the channels to join
+(`#one,#two`, or none); the settings are kept in a small text file, `irc`,
+on the program disk.
+
+- **Plain IRC only.** No adapter offers TLS, so use a server's plain port,
+  usually 6667. Do not send passwords: there is no NickServ or SASL login.
+- **Windows:** the Server window and up to four channels or private
+  conversations, shown as tabs under the title. A tab turns white when
+  there is something new, and amber for a private message or your nickname.
+- **Keys:** RETURN sends, F1 next window, F3 closes the window (leaving a
+  channel), F5 lists the channel's names, F7 disconnects.
+- **Commands:** `/join #channel [key]`, `/part`, `/names`, `/nick name`,
+  `/msg name text`, `/query name`, `/me action`, `/quit`, `/help`. Text that
+  starts with a slash is sent with `//`.
+- **Text:** ASCII. Accented letters and emoji are shown as `?`, and mIRC
+  colours and styles are removed.
+- Each window shows its last 20 rows; there is no scrollback. People
+  quitting or changing nickname are shown in the channel when exactly one
+  is joined, otherwise in the Server window, because the client keeps no
+  member lists.
+
+The IRC client has host and 6502 tests against a scripted server. It has
+not been run on real hardware yet.
 
 ## Phonebook
 
@@ -112,18 +139,18 @@ there is no suspended session to resume. **F1** retries a failed interface.
 The VIC display stays blank during operation at 2 MHz, including temporary
 1 MHz cartridge accesses, and its display setting is restored on exit.
 
-The screens and the session take turns in one slot at `$3700-$5fff`, as
-four overlays: `uimain` (launcher, main screen, connect form, summary),
-`uibook` (phonebook and recent connections), `uiterm` (connection,
-Telnet session and the ANSI/VT100/PETSCII terminal) and `uixfer` (file
-transfers). Each is loaded from
+The screens and the session take turns in one slot at `$3800-$5fff`, as
+five overlays: `uimain` (launcher, main screen, connect form, IRC server
+form, summary), `uibook` (phonebook and recent connections), `uiterm`
+(connection, Telnet session and the ANSI/VT100/PETSCII terminal), `uixfer`
+(file transfers) and `uiirc` (IRC chat). Each is loaded from
 disk once and kept in C128 RAM bank 1 at its real length; later switches
 copy it back with the KERNAL's INDFET routine. Bank 1 also holds the
-phonebook, recent list, CP437 font, and the terminal screen during a
-transfer. The resident program (platform, adapters' interface, Telnet,
-disk access, overlay loader) ends near `$3660`; its variables use the free
+phonebook, recent list, CP437 font, the terminal screen during a
+transfer, and the rows of the IRC windows. The resident program (platform, adapters' interface, Telnet,
+disk access, overlay loader) ends near `$3740`; its variables use the free
 `$1300-$1bff` area, the overlays' variables `$0b00-$0fff`, and the
-transfer overlay's the unused VIC text screen at `$0400`. The
+transfer and IRC overlays' the unused VIC text screen at `$0400`. The
 memory map is in `include/memory_map.h` and `include/bank1.h`.
 
 Adapter buffers share the reserved `$6000-$7fff` RAM area. Ultimate's buffers

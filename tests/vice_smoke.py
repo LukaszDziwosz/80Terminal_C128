@@ -250,6 +250,7 @@ def check(m, labels, mm, shots=None):
     # The Ultimate's long status wraps onto the panel's second status row.
     assert 'press F1.' in rows[9], rows[8:10]
     assert 'None yet.' in rows[13] and 'Recent connections' in rows[12]
+    assert 'F2  IRC' in rows[24] and 'F8  Quit' in rows[24], rows[24]
     if shots:
         m.capture(shots / 'main.png')
     print('PASS: main screen restored from bank 1 after the phonebook overlay; Ultimate reported unavailable', flush=True)

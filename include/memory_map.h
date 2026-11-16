@@ -17,14 +17,15 @@
 #define UIBSS_END      0x1000
 
 /* The VIC 40-column screen: unused, since the VIC display stays blank and
- * the KERNAL editor writes to the VDC. BSS of the transfer overlay; it is
- * cleared to spaces on exit (platform_exit). */
+ * the KERNAL editor writes to the VDC. BSS of the transfer overlay and of
+ * the IRC overlay, which never run together; it is cleared to spaces on
+ * exit (platform_exit). */
 #define XFERBSS_START  0x0400
 #define XFERBSS_END    0x07e8
 
 #define MAIN_START     0x1c80
 /* UI overlays (overlay.h) take turns in this slot. */
-#define UI_SLOT_START  0x3700
+#define UI_SLOT_START  0x3800
 #define UI_SLOT_END    0x6000
 #define UI_SLOT_SIZE   (UI_SLOT_END - UI_SLOT_START)
 #endif

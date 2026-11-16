@@ -31,8 +31,17 @@
 #pragma region(xferslot, UI_SLOT_START, UI_SLOT_END, , 7, {xfercode, xferdata})
 #pragma section(xferbss, 0, , , bss)
 #pragma region(xferram, XFERBSS_START, XFERBSS_END, , , {xferbss})
+#pragma overlay(uiirc, 8)
+#pragma section(irccode, 0)
+#pragma section(ircdata, 0)
+#pragma region(ircslot, UI_SLOT_START, UI_SLOT_END, , 8, {irccode, ircdata})
+/* IRC and the transfer overlay never run together: the same RAM. */
+#pragma section(ircbss, 0, , , bss)
+#pragma region(ircram, XFERBSS_START, XFERBSS_END, , , {ircbss})
 #pragma section(bookbss, 0, , , bss)
-#pragma region(uiram, UIBSS_START, UIBSS_END, , , {uibss, bookbss})
+/* irccfg: the IRC server settings (ircconfig.h), shared by two overlays. */
+#pragma section(irccfg, 0, , , bss)
+#pragma region(uiram, UIBSS_START, UIBSS_END, , , {uibss, bookbss, irccfg})
 /* $6000-$7fff: adapter-owned buffers. WiC64 uses its fixed response area;
  * RR-Net and Ultimate use the same RAM for their buffers. Only one is loaded. */
 #pragma region(runtime_stack, 0x8000, 0x8200, , , {stack})

@@ -9,6 +9,9 @@
 #include "vdc_screen.h"
 #include "book.h"
 #include "transfer.h"
+#include "ircui.h"
+#include "ircconfig.h"
+#include "disk.h"
 #include "memory_map.h"
 
 static int state, calls, polls, sessions, key_index, fail_first, immediate, idle_polls;
@@ -23,7 +26,10 @@ static uint8_t vdc[0x1000];
 #define CONNECT_MONO PETSCII_F3, 'a', 13, 13, '9', '4', ' '
 /* F5: the phonebook (stubbed) dials "a" too, then the summary. */
 #define PHONEBOOK PETSCII_F5, ' '
-static const unsigned char keys[] = {CONNECT, PETSCII_F1, CONNECT_MONO, PHONEBOOK, PETSCII_F8};
+/* F2: the IRC form with its defaults (no settings file), accepted with four
+ * RETURNs, then the IRC overlay (stubbed), which returns to the main screen. */
+#define IRC PETSCII_F2, 13, 13, 13, 13
+static const unsigned char keys[] = {CONNECT, PETSCII_F1, CONNECT_MONO, PHONEBOOK, IRC, PETSCII_F8};
 static const unsigned char *script = keys;
 static int script_length = (int)sizeof(keys);
 
@@ -69,11 +75,33 @@ uint8_t platform_device(void) { return 8; }
 uint8_t platform_key_pending(void) { return idle_polls > 0; }
 uint16_t overlay_disk_load(const char *name)
 {
-    assert(!strcmp(name, "uimain") || !strcmp(name, "uibook") || !strcmp(name, "uiterm") || !strcmp(name, "uixfer"));
+    assert(!strcmp(name, "uimain") || !strcmp(name, "uibook") || !strcmp(name, "uiterm") || !strcmp(name, "uixfer") ||
+           !strcmp(name, "uiirc"));
     strcpy(last_load, name);
     ++disk_loads;
     return disk_fail ? 0 : UI_SLOT_START + 0x100;
 }
+static int irc_runs;
+void irc_run(const struct net_backend *backend)
+{
+    /* Only offered with the interface ready, after the form. */
+    assert(backend->state() == NET_CLOSED);
+    assert(irc_config_loaded && irc_config.port == 6667);
+    assert(!strcmp(irc_config.host, "irc.libera.chat") && !strcmp(irc_config.nick, "c128user"));
+    ++irc_runs;
+}
+/* No "irc" file on the disk, and nothing changed to save. */
+char disk_message[40];
+uint8_t disk_device = 8;
+uint8_t disk_open(const char *name, const char *mode, uint8_t secondary)
+{
+    assert(!strcmp(name, "irc") && !strcmp(mode, ",s,r") && secondary == 2);
+    return 62;
+}
+uint8_t disk_read(char *buffer, uint8_t capacity) { (void)buffer; (void)capacity; assert(0); return 0; }
+uint8_t disk_write(const char *data, uint8_t length) { (void)data; (void)length; assert(0); return 1; }
+uint8_t disk_close(void) { assert(0); return 0; }
+uint8_t disk_command(const char *command) { (void)command; assert(0); return 0; }
 void book_startup(void) { ++startups; }
 uint8_t book_run(const struct net_backend *backend, struct connect_request *request)
 {
@@ -179,7 +207,7 @@ int main(void)
     test_launcher();
     for (int mode = 0; mode < 3; ++mode) {
         calls = polls = sessions = key_index = idle_polls = summaries = 0;
-        book_runs = recents_noted = startups = transfers = resumes = 0;
+        book_runs = recents_noted = startups = transfers = resumes = irc_runs = 0;
         fail_first = mode == 1; immediate = mode == 2;
         ui_reset();
         program_run(&backend);
@@ -187,15 +215,15 @@ int main(void)
         /* fail_first: the first connect keys arrive while the interface is down. */
         assert(calls == 2 && sessions == (fail_first ? 2 : 3));
         assert(summaries == sessions && recents_noted == sessions);
-        assert(startups == 1 && book_runs == 1);
+        assert(startups == 1 && book_runs == 1 && irc_runs == 1);
         /* One transfer, then back to the same session. */
         assert(transfers == 1 && resumes == 1);
         assert(idle_polls >= 4);
     }
     /* test_overlay_cache already loaded main and book: only the terminal
-     * and the transfer overlay came from disk here, once each; every other
+     * transfer and IRC overlays came from disk here, once each; every other
      * switch was a bank-1 copy. */
-    assert(disk_loads == 2 && bank1_writes == 2);
+    assert(disk_loads == 3 && bank1_writes == 3);
     assert(bank1_reads > 10);
     puts("Main-screen, connect form, summary and overlay cache tests passed");
     return 0;
