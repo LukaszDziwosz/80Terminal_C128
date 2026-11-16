@@ -17,9 +17,10 @@ a summary of the session.
 ## IRC
 
 **F2** on the main screen opens the IRC client, on the same adapter as the
-terminal. Enter the server, port, nickname and the channels to join
+terminal. Enter the server, port, your nickname and the channels to join
 (`#one,#two`, or none); the settings are kept in a small text file, `irc`,
-on the program disk.
+on the program disk. There is no default nickname, so that users do not
+all arrive under the same one.
 
 - **Plain IRC only.** No adapter offers TLS, so use a server's plain port,
   usually 6667. Do not send passwords: there is no NickServ or SASL login.

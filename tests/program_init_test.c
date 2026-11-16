@@ -26,9 +26,10 @@ static uint8_t vdc[0x1000];
 #define CONNECT_MONO PETSCII_F3, 'a', 13, 13, '9', '4', ' '
 /* F5: the phonebook (stubbed) dials "a" too, then the summary. */
 #define PHONEBOOK PETSCII_F5, ' '
-/* F2: the IRC form with its defaults (no settings file), accepted with four
- * RETURNs, then the IRC overlay (stubbed), which returns to the main screen. */
-#define IRC PETSCII_F2, 13, 13, 13, 13
+/* F2: the IRC form with its defaults (no settings file). There is no default
+ * nickname, so four RETURNs are refused; with one typed, the IRC overlay
+ * (stubbed) runs and returns to the main screen. */
+#define IRC PETSCII_F2, 13, 13, 13, 13, 13, 13, 'z', 'x', 13, 13
 static const unsigned char keys[] = {CONNECT, PETSCII_F1, CONNECT_MONO, PHONEBOOK, IRC, PETSCII_F8};
 static const unsigned char *script = keys;
 static int script_length = (int)sizeof(keys);
@@ -87,21 +88,26 @@ void irc_run(const struct net_backend *backend)
     /* Only offered with the interface ready, after the form. */
     assert(backend->state() == NET_CLOSED);
     assert(irc_config_loaded && irc_config.port == 6667);
-    assert(!strcmp(irc_config.host, "irc.libera.chat") && !strcmp(irc_config.nick, "c128user"));
+    assert(!strcmp(irc_config.host, "irc.libera.chat") && !strcmp(irc_config.nick, "zx"));
     ++irc_runs;
 }
-/* No "irc" file on the disk, and nothing changed to save. */
+/* No "irc" file on the disk at first; the typed nickname is saved. */
 char disk_message[40];
 uint8_t disk_device = 8;
+static int irc_saves, irc_writing;
 uint8_t disk_open(const char *name, const char *mode, uint8_t secondary)
 {
-    assert(!strcmp(name, "irc") && !strcmp(mode, ",s,r") && secondary == 2);
-    return 62;
+    assert(!strcmp(name, "irc") && secondary == 2 && !irc_writing);
+    if (!strcmp(mode, ",s,r")) return 62;
+    assert(!strcmp(mode, ",s,w"));
+    irc_writing = 1;
+    ++irc_saves;
+    return 0;
 }
 uint8_t disk_read(char *buffer, uint8_t capacity) { (void)buffer; (void)capacity; assert(0); return 0; }
-uint8_t disk_write(const char *data, uint8_t length) { (void)data; (void)length; assert(0); return 1; }
-uint8_t disk_close(void) { assert(0); return 0; }
-uint8_t disk_command(const char *command) { (void)command; assert(0); return 0; }
+uint8_t disk_write(const char *data, uint8_t length) { (void)data; (void)length; assert(irc_writing); return 0; }
+uint8_t disk_close(void) { assert(irc_writing); irc_writing = 0; return 0; }
+uint8_t disk_command(const char *command) { assert(!strcmp(command, "s:irc")); return 1; }
 void book_startup(void) { ++startups; }
 uint8_t book_run(const struct net_backend *backend, struct connect_request *request)
 {
@@ -208,6 +214,7 @@ int main(void)
     for (int mode = 0; mode < 3; ++mode) {
         calls = polls = sessions = key_index = idle_polls = summaries = 0;
         book_runs = recents_noted = startups = transfers = resumes = irc_runs = 0;
+        irc_saves = 0; irc_config_loaded = 0;
         fail_first = mode == 1; immediate = mode == 2;
         ui_reset();
         program_run(&backend);
@@ -216,6 +223,8 @@ int main(void)
         assert(calls == 2 && sessions == (fail_first ? 2 : 3));
         assert(summaries == sessions && recents_noted == sessions);
         assert(startups == 1 && book_runs == 1 && irc_runs == 1);
+        /* Read once per program run (the settings stay in RAM), saved once. */
+        assert(irc_saves == 1);
         /* One transfer, then back to the same session. */
         assert(transfers == 1 && resumes == 1);
         assert(idle_polls >= 4);

@@ -293,7 +293,7 @@ static uint8_t connect_form(const struct net_backend *backend, struct connect_re
  *   80TIRC 1
  *   irc.libera.chat
  *   6667
- *   c128user
+ *   mynick
  *   #c64,#retro           (may be empty)
  */
 static char *irc_field(uint8_t index, uint8_t *capacity)
@@ -310,6 +310,7 @@ static const char *irc_problem(void)
     irc_config.port = irc_port(irc_config.port_text);
     if (!irc_config.host[0]) return "Enter a server hostname or IPv4 address.";
     if (!irc_config.port) return "Enter a port from 1 to 65535.";
+    if (!irc_config.nick[0]) return "Choose your nickname: up to 16 letters, digits and - _ [ ].";
     if (!irc_valid_nick(irc_config.nick)) return "Enter a nickname: letters, digits and - _ [ ], starting with a letter.";
     if (!irc_valid_channels(irc_config.channels)) return "Channels start with # and are separated by commas, without spaces.";
     return 0;
@@ -318,7 +319,8 @@ static void irc_defaults(void)
 {
     strcpy(irc_config.host, "irc.libera.chat");
     strcpy(irc_config.port_text, "6667");
-    strcpy(irc_config.nick, "c128user");
+    /* No default nickname: everyone would arrive under the same one. */
+    irc_config.nick[0] = 0;
     irc_config.channels[0] = 0;
 }
 static void irc_load(void)

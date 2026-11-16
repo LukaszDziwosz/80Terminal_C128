@@ -258,9 +258,11 @@ static void run(const struct step *script)
 
 /* No file yet: the defaults, edited, are saved; then a whole session. */
 static const struct step session[] = {
-    {'R', "irc.libera.chat"}, {'R', "6667"}, {'R', "c128user"}, {'R', "no TLS"},
-    /* Server: replaced. Port and nickname kept. Channels: one typed. */
-    {'K', HOME "irc.example.org\r\r\r#retro\r"},
+    {'R', "irc.libera.chat"}, {'R', "6667"}, {'R', "no TLS"},
+    /* There is no default nickname: one must be chosen. */
+    {'K', "\r\r\r\r"}, {'R', "Choose your nickname"},
+    /* Server: replaced. Port kept. Nickname and a channel typed. */
+    {'K', HOME "irc.example.org\r\rc128user\r#retro\r"},
     {'R', "Connecting to irc.example.org:6667"},
     {'W', REGISTER},
     {'S', ":irc.example.org NOTICE * :*** Looking up your hostname\r\n"},
@@ -427,11 +429,11 @@ int main(void)
     /* The cancelled edit ("x" added to the server) is not kept. */
     run(invalid);
     assert(connects == 4 && !strcmp(connected_host, "irc.example.org") && saves == 2);
-    /* A damaged file falls back to the defaults. */
+    /* A damaged file falls back to the defaults, without a nickname. */
     irc_config_loaded = 0;
     put_file("80TIRC 1\nirc.example.org\nport\nc128user\n");
     run(cancelled_form);
-    assert(on_screen(6, "irc.libera.chat") && on_screen(8, "6667"));
+    assert(on_screen(6, "irc.libera.chat") && on_screen(8, "6667") && !on_screen(10, "c128user"));
     puts("IRC form, settings file, chat windows and protocol tests passed");
     return 0;
 }
