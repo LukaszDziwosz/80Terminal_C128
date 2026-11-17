@@ -6,6 +6,11 @@
 /* All application buffers are static; do not reserve an unused 1 KB heap. */
 #pragma heapsize(0)
 #include "memory_map.h"
+/* Oscar64's default zero page is $F7-$FE, but on the C128 $F7 is LOCKS and
+ * $F8 is the screen editor's SCROLL flag: bank1_pointer's high byte there
+ * turned off scrolling and line linking, so PETSCII output wrapped back to
+ * the top row. $FA-$FE are the C128's free user zero-page bytes. */
+#pragma region(zeropage, 0x00fa, 0x00ff, , , {})
 /* Low C128 RAM, BSS only: large resident buffers and UI overlay state. */
 #pragma section(lowbss, 0, , , bss)
 #pragma section(uibss, 0, , , bss)
