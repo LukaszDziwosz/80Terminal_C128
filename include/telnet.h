@@ -12,7 +12,9 @@ enum telnet_profile {
     /* Display variants: the host sees ANSI or VT100; the screen is white on
      * black without per-character attributes (ansi_terminal.h). */
     TELNET_PROFILE_ANSI_MONO_80,
-    TELNET_PROFILE_VT100_MONO_80
+    TELNET_PROFILE_VT100_MONO_80,
+    /* Amiga ANSI with the Topaz font and Latin-1; the host sees ANSI. */
+    TELNET_PROFILE_AMIGA_80
 };
 
 typedef void (*telnet_send_callback)(const uint8_t* data, uint8_t length);

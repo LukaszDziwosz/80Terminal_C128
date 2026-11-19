@@ -26,17 +26,21 @@ build:
 build/cp437font: assets/cp437-8x8.hex tools/build_vdc_font.py | build
 	$(PYTHON) tools/build_vdc_font.py $< $@
 
+# Amiga Topaz 8, Latin-1 order; undefined slots are blank.
+build/topazfont: assets/topaz-8x8.hex tools/build_vdc_font.py | build
+	$(PYTHON) tools/build_vdc_font.py $< $@
+
 # Oscar emits the resident PRG and three overlay files into its D64.
 # Build in build/disk/ (the disk is named after the file) so a failed build
 # cannot replace a good disk.
 build/wic64bridge.bin: $(WIC64_SOURCES) | build
 	acme -I third_party/wic64 -f plain -o $@ src/net/wic64/bridge.asm
 
-$(DISK_IMAGE): $(SOURCES) $(WIC64_SOURCES) assets/phonebook.txt Makefile tools/check_rrnet_codegen.py build/cp437font build/wic64bridge.bin | build
+$(DISK_IMAGE): $(SOURCES) $(WIC64_SOURCES) assets/phonebook.txt Makefile tools/check_rrnet_codegen.py build/cp437font build/topazfont build/wic64bridge.bin | build
 	rm -rf build/disk && mkdir -p build/disk
 	$(OSCAR64) $(OSCARFLAGS) -i=include -o=build/80terminal.prg -d64=build/disk/80terminal.d64 $(APP_SOURCES)
 	$(PYTHON) tools/check_rrnet_codegen.py build/80terminal.asm
-	$(C1541) -attach build/disk/80terminal.d64 -write build/cp437font cp437font,s -write assets/phonebook.txt phonebook,s
+	$(C1541) -attach build/disk/80terminal.d64 -write build/cp437font cp437font,s -write build/topazfont topazfont,s -write assets/phonebook.txt phonebook,s
 	mv build/disk/80terminal.d64 $@
 
 build/test-%: tests/%_test.c src/core/%.c include/%.h include/telnet.h | build
@@ -79,9 +83,10 @@ build/test-rrnet-dhcp: $(DHCP_TEST_SOURCES) $(wildcard src/net/rrnet/*.h) includ
 build/test-rrnet-transport: tests/rrnet_transport_test.c $(RRNET_PROTOCOL_SOURCES) $(wildcard src/net/rrnet/*.h) include/network.h include/platform.h | build
 	$(HOST_CC) -std=c99 -O2 -Wall -Wextra -Werror -DRRNET_IP65_TEST -Iinclude -Isrc/net/rrnet tests/rrnet_transport_test.c $(RRNET_PROTOCOL_SOURCES) -o $@
 
-test: $(HOST_TESTS) build/cp437font
+test: $(HOST_TESTS) build/cp437font build/topazfont
 	@set -e; for test in $(HOST_TESTS); do ./$$test; done
 	$(PYTHON) -c 'from pathlib import Path; assert len(Path("build/cp437font").read_bytes()) == 4096; print("CP437 asset: 4096 bytes")'
+	$(PYTHON) -c 'from pathlib import Path; assert len(Path("build/topazfont").read_bytes()) == 4096; print("Topaz asset: 4096 bytes")'
 
 # Run the same portable tests as real 6502 code in Oscar's CPU emulator.
 # Default C64 runtime is used only by this CPU test harness, not the app.

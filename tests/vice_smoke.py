@@ -264,7 +264,7 @@ def check(m, labels, mm, shots=None):
     # F1: add a board, keep port 23, choose VT100 mono; it is saved to disk.
     type_keys(m, bytes([0x85]) + petscii('Test board') + b'\r' + petscii('test.example') + b'\r' + b'\r')
     rows = wait_text(m, '5 VT100 mono')
-    assert '1 ANSI  2 PETSCII  3 VT100  4 ANSI mono  5 VT100 mono' in rows[11], rows[11]
+    assert '1 ANSI 2 PETSCII 3 VT100 4 ANSI mono 5 VT100 mono 6 Amiga' in rows[11], rows[11]
     if shots:
         m.capture(shots / 'phonebook-edit.png')
     type_keys(m, b'5')

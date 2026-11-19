@@ -27,7 +27,9 @@ int main(void)
     assert(parse("A|h|23|PETSCII80") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_PETSCII_80);
     assert(parse("A|h|23|vt100") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_VT100_80);
     assert(parse("A|h|23|petscii40") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_PETSCII_80);
-    assert(parse("Retro32|bbs.retro32.com|1337|amiga80") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_ANSI_80);
+    assert(parse("Retro32|bbs.retro32.com|1337|amiga80") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_AMIGA_80);
+    n = phonebook_format_line(out, &entry);
+    assert(n == 38 && !memcmp(out, "Retro32|bbs.retro32.com|1337|amiga80\r\n", 38));
     /* Monochrome displays round trip; Flutter's plain text becomes ANSI mono. */
     assert(parse("A|h|23|vt100mono") == PHONEBOOK_LINE_ENTRY && entry.profile == TELNET_PROFILE_VT100_MONO_80);
     n = phonebook_format_line(out, &entry);

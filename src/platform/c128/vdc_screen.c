@@ -116,21 +116,24 @@ void screen_restore_font(void)
     __asm { jsr $ff62 }  /* C128 KERNAL DLCHR, available with c128e. */
     font_active = 0;
 }
+/* SCREEN_FONT_* + 1 for the font held at BANK1_FONT; 0 for none. Only one
+ * font is kept: switching profile loads the other from disk. */
 static uint8_t font_cached;
+static const char *const font_files[] = {p"cp437font,s,r", p"topazfont,s,r"};
 static void font_chunk_to_vdc(uint16_t offset)
 {
-    /* VDC alternate characters 0..127 are normal ASCII, while the
-     * normal bank holds CP437 128..255 as character codes 0..127. */
+    /* VDC alternate characters 0..127 are font bytes 0..127, while the
+     * normal bank holds bytes 128..255 as character codes 0..127. */
     screen_write_run(offset < 2048 ? 0x3000 + offset : 0x2000 + offset - 2048, font_chunk, 256);
 }
-uint8_t screen_load_cp437(uint8_t device)
+uint8_t screen_load_font(uint8_t device, uint8_t font)
 {
     uint16_t offset;
     uint8_t speed;
     uint8_t ok = 1;
     if (font_active) screen_restore_font();
     saved_font_reg = screen_reg_read(28);
-    if (font_cached) {
+    if (font_cached == font + 1) {
         /* Later sessions and returning from a transfer: no disk access. */
         font_active = 1;
         for (offset = 0; offset < 4096; offset += 256) {
@@ -140,9 +143,11 @@ uint8_t screen_load_cp437(uint8_t device)
         screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
         return 1;
     }
+    /* The bank-1 copy is overwritten from here on. */
+    font_cached = 0;
     speed = platform_slow();
     krnio_setbnk(0, 0);
-    krnio_setnam(p"cp437font,s,r");
+    krnio_setnam(font_files[font]);
     if (!krnio_open(2, device, 2)) {
         krnio_close(2);
         platform_restore_speed(speed);
@@ -163,7 +168,7 @@ uint8_t screen_load_cp437(uint8_t device)
     platform_restore_speed(speed);
     if (!ok) screen_restore_font();
     else {
-        font_cached = 1;
+        font_cached = font + 1;
         screen_reg_write(28, (saved_font_reg & 0x1f) | 0x20);
     }
     return ok;

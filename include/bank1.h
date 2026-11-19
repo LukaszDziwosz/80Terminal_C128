@@ -12,7 +12,7 @@
 #define BANK1_PHONEBOOK      0x0400u  /* PHONEBOOK_MAX entries */
 #define BANK1_RECENT         0x1800u  /* RECENT_MAX entries, newest first */
 #define BANK1_RECENT_END     0x1c00u
-#define BANK1_FONT           0x1c00u  /* CP437 font after its first load: 4 KB */
+#define BANK1_FONT           0x1c00u  /* last terminal font loaded: 4 KB */
 #define BANK1_SCREEN         0x2c00u  /* terminal screen during a transfer: 2000 + 2000 */
 #define BANK1_DIRECTORY      0x3c00u  /* disk directory for the upload list */
 #define BANK1_DIRECTORY_END  0x4c00u

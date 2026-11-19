@@ -53,7 +53,7 @@ static const char *const main_keys[] = {
     "F1", "Retry", "F2", "IRC", "F3", "Connect", "F5", "Phonebook", "1-9", "Dial", "F8", "Quit", 0 };
 static const char *const edit_keys[] = {
     "RETURN", "Next", "DEL", "Erase", "HOME", "Clear", "F7", "Cancel", 0 };
-static const char *const profile_keys[] = { "1-5", "Terminal", "F7", "Cancel", 0 };
+static const char *const profile_keys[] = { "1-6", "Terminal", "F7", "Cancel", 0 };
 static const char *const cancel_keys[] = { "F7", "Cancel", 0 };
 static const char *const any_key[] = { "Any key", "Main screen", 0 };
 
@@ -279,7 +279,7 @@ static uint8_t connect_form(const struct net_backend *backend, struct connect_re
     request->port = port;
     ui_text(LABEL_COL, PROFILE_ROW, "Terminal", UI_MUTED);
     terminal_choices(VALUE_COL, PROFILE_ROW);
-    ui_text_field(LABEL_COL, 14, 70, "ANSI: CP437, 80x25. VT100: DEC graphics, 80x24. PETSCII: C128, 80x25.", UI_MUTED);
+    ui_text_field(LABEL_COL, 14, 70, "ANSI: CP437. Amiga: Topaz. VT100: DEC graphics, 80x24. PETSCII: C128.", UI_MUTED);
     ui_text(LABEL_COL, 15, "Mono: white text without colour attributes, for faster output.", UI_MUTED);
     ui_text(LABEL_COL, 16, "During a session: F7 disconnects; CTRL-C goes to the host.", UI_MUTED);
     ui_keys(profile_keys);

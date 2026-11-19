@@ -4,7 +4,10 @@
 typedef void (*ansi_send_callback)(const uint8_t *data, uint8_t length);
 #define ANSI_TERMINAL_VT100 1
 #define ANSI_TERMINAL_MONOCHROME 2
-/* ANSI: 80x25 CP437. VT100: 80x24 with DEC G0/G1 graphics. */
+#define ANSI_TERMINAL_AMIGA 4
+/* ANSI: 80x25 CP437. VT100: 80x24 with DEC G0/G1 graphics. Amiga: 80x25
+ * Topaz with Latin-1, single-byte CSI ($9B), newline mode on and Amiga
+ * console key codes; C1 bytes $80-$9F are never drawn. */
 /* Combine the mode flags above. Monochrome uses white on black without
  * per-character rendition attributes, retaining all 256 CP437 glyphs. */
 uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t mode_flags);

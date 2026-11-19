@@ -3,21 +3,28 @@
 #include <stdio.h>
 #include <string.h>
 #include "ansi_terminal.h"
+#include "vdc_screen.h"
+
+#ifdef __OSCAR64C__
+/* The 6502 build fills the default C64 memory; nothing here uses a heap. */
+#pragma heapsize(0)
+#endif
 
 /* VDC RAM, and the page the display currently shows: tests read the
  * visible screen through vdc[], with attributes at vdc[0x800 + n]. */
 static uint8_t ram[16384], sent[32], sent_length, restored;
 static uint8_t *vdc = ram;
 static uint16_t shown_chars, shown_attrs, cursor_address;
-static uint8_t cursor_visible, watch_visible;
+static uint8_t cursor_visible, watch_visible, loaded_font, font_loads;
 static unsigned flips, visible_writes;
 static uint8_t registers[37];
 static unsigned attribute_writes, write_calls, longest_write;
 
-uint8_t screen_load_cp437(uint8_t device)
+uint8_t screen_load_font(uint8_t device, uint8_t font)
 {
     uint16_t glyph;
     if (device != 8) return 0;
+    loaded_font = font; ++font_loads;
     /* Distinct glyph data in the same split layout as the real loader. */
     for (glyph = 0; glyph < 256; ++glyph)
         memset(ram + (glyph < 128 ? 0x3000 + glyph * 16 : 0x2000 + (glyph - 128) * 16),
@@ -332,6 +339,65 @@ static void test_monochrome(void)
     ansi_terminal_shutdown();
 }
 
+static void test_amiga(void)
+{
+    uint8_t key[5];
+    font_loads = 0;
+    assert(ansi_terminal_init(send, 8, ANSI_TERMINAL_AMIGA));
+    assert(loaded_font == SCREEN_FONT_TOPAZ && font_loads == 1);
+    sent_length = 0;
+    ansi_terminal_end_update();
+    /* Single-byte CSI, and ESC [ as well. */
+    feed("\2333;4HA\033[1;1HB");
+    assert(vdc[163] == 'A' && vdc[0] == 'B');
+    feed("\23331mR");
+    assert(vdc[1] == 'R' && vdc[0x801] == 0x88);
+    /* Newline mode is on: LF returns to column 0. */
+    feed("\033[0m\033[5;10HX\nY");
+    assert(vdc[4 * 80 + 9] == 'X' && vdc[5 * 80] == 'Y');
+    feed("\033[20l\nZ");
+    assert(vdc[6 * 80 + 1] == 'Z');
+    feed("\033[20h");
+    /* C1 bytes are controls, Latin-1 is drawn: $E9 from the normal bank. */
+    feed("\033[8;1H\x85\x9f\xe9");
+    assert(vdc[7 * 80] == (0xe9 & 127) && !(vdc[0x800 + 7 * 80] & 128) && vdc[7 * 80 + 1] == ' ');
+    /* VT moves up, without scrolling at the top; FF clears and homes. */
+    feed("\033[3;5H\vU\033[1;1H\vT");
+    assert(vdc[80 + 4] == 'U' && vdc[0] == 'T');
+    feed("\fF");
+    assert(vdc[0] == 'F' && vdc[163] == ' ' && vdc[80 + 4] == ' ');
+    /* CSI n u sets the Amiga line length; a bare CSI u still restores. */
+    feed("\033[3;3H\033[s\033[10;10H\033[80u\033[6n");
+    expect_reply("\033[10;10R");
+    feed("\033[u\033[6n");
+    expect_reply("\033[3;3R");
+    /* Reset keeps newline mode on. */
+    feed("\033c\033[2;7HX\nY");
+    assert(vdc[80 + 6] == 'X' && vdc[160] == 'Y');
+    /* Keys: Amiga CSI codes; RETURN is CR alone; DEL is backspace. */
+    assert(ansi_terminal_key(0x91, key) == 2 && key[0] == 0x9b && key[1] == 'A');
+    assert(ansi_terminal_key(0x9d, key) == 2 && key[0] == 0x9b && key[1] == 'D');
+    assert(ansi_terminal_key(0x85, key) == 3 && !memcmp(key, "\2330~", 3));
+    assert(ansi_terminal_key(0x89, key) == 3 && !memcmp(key, "\2331~", 3));
+    assert(ansi_terminal_key(0x8b, key) == 3 && !memcmp(key, "\2335~", 3));
+    assert(ansi_terminal_key(0x8c, key) == 3 && !memcmp(key, "\2337~", 3));
+    assert(ansi_terminal_key(0x13, key) == 4 && !memcmp(key, "\23344~", 4));
+    assert(ansi_terminal_key(13, key) == 1 && key[0] == 13);
+    assert(ansi_terminal_key(0x14, key) == 1 && key[0] == 8);
+    assert(ansi_terminal_key('Q', key) == 1 && key[0] == 'q');
+    /* A transfer returns to Topaz; the cached copy serves the reload. */
+    ansi_terminal_suspend();
+    assert(ansi_terminal_resume(8) && loaded_font == SCREEN_FONT_TOPAZ);
+    ansi_terminal_shutdown();
+    /* The other profiles still use CP437, and do not treat $9B as CSI. */
+    assert(ansi_terminal_init(send, 8, 0) && loaded_font == SCREEN_FONT_CP437);
+    ansi_terminal_end_update();
+    feed("\2331mQ\v");
+    assert(vdc[0] == (0x9b & 127) && vdc[1] == '1' && vdc[3] == 'Q' && vdc[80 + 4] == ' ');
+    assert(ansi_terminal_key(0x85, key) == 0);
+    ansi_terminal_shutdown();
+}
+
 int main(void)
 {
     uint8_t key[5];
@@ -381,6 +447,7 @@ int main(void)
     test_scroll_page_flip();
     test_suspend_resume();
     test_monochrome();
-    puts("ANSI and VT100 terminal parser tests passed");
+    test_amiga();
+    puts("ANSI, VT100 and Amiga terminal parser tests passed");
     return 0;
 }

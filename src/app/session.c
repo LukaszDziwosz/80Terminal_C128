@@ -125,7 +125,7 @@ static void terminal(const struct net_backend *backend, struct session_result *r
     if (resuming) {
         if (!resume(ascii_mode)) {
             result->outcome = SESSION_ENDED;
-            copy_text(result->message, "Could not load CP437 font from the boot disk.");
+            copy_text(result->message, "Could not load the terminal font from the boot disk.");
             result->detail[0] = 0;
             return;
         }
@@ -136,7 +136,7 @@ static void terminal(const struct net_backend *backend, struct session_result *r
         telnet_init(profile, enqueue);
         if (ascii_mode && !ansi_terminal_init(ansi_send_terminal, platform_device(), display_flags)) {
             result->outcome = SESSION_ENDED;
-            copy_text(result->message, "Could not load CP437 font from the boot disk.");
+            copy_text(result->message, "Could not load the terminal font from the boot disk.");
             result->detail[0] = 0;
             result->keys = result->sent = 0;
             return;
@@ -218,7 +218,8 @@ __noinline void session_run(const struct net_backend *backend, const struct conn
     }
     profile = request->profile;
     display_flags = (telnet_profile_is_vt100(profile) ? ANSI_TERMINAL_VT100 : 0) |
-                    (telnet_profile_is_mono(profile) ? ANSI_TERMINAL_MONOCHROME : 0);
+                    (telnet_profile_is_mono(profile) ? ANSI_TERMINAL_MONOCHROME : 0) |
+                    (profile == TELNET_PROFILE_AMIGA_80 ? ANSI_TERMINAL_AMIGA : 0);
     result->outcome = SESSION_NONE;
     /* The UI has drawn the "Connecting" screen. Some transports (WiC64)
      * open TCP in one firmware request, so it is visible during the wait. */

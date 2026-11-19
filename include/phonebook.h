@@ -12,9 +12,9 @@
  *
  * Fields: name|host|port|mode. Extra fields after mode are ignored, so a
  * later format version can add some. Mode names follow the 80Terminal
- * Flutter app: petscii80, ansi80, plus vt100 and the monochrome displays
- * ansi80mono and vt100mono. Modes this client cannot run map to the nearest
- * one (petscii40, amiga80, ascii80) or are skipped. */
+ * Flutter app: petscii80, ansi80, amiga80, plus vt100 and the monochrome
+ * displays ansi80mono and vt100mono. Modes this client cannot run map to the
+ * nearest one (petscii40, ascii80) or are skipped. */
 #define PHONEBOOK_MAX 50
 #define RECENT_MAX 9   /* dialled with keys 1-9 on the main screen */
 #define PHONEBOOK_NAME_SIZE 24

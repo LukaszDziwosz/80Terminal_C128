@@ -59,8 +59,8 @@ LukasSoft BBS|bbs.lukassoft.com|48822|ansi80
 ```
 
 Each line is `name|host|port|mode`, with CR, LF or CRLF line endings. Modes
-are `petscii80`, `ansi80`, `vt100`, `ansi80mono` and `vt100mono`; `petscii40`,
-`amiga80` and `ascii80` (as ANSI mono) from the 80Terminal mobile app are
+are `petscii80`, `ansi80`, `vt100`, `ansi80mono`, `vt100mono` and `amiga80`;
+`petscii40` and `ascii80` (as ANSI mono) from the 80Terminal mobile app are
 read as their nearest 80-column mode, and
 other modes are skipped for now. Names are up to 24 characters and hosts up to 64.
 Fields after the mode are ignored, so later versions can add some. Saving
@@ -99,7 +99,7 @@ connections, disconnecting and reconnecting. The latest VIC blanking and
 F7 disconnect / Ctrl-C passthrough changes were also validated on hardware.
 WiC64 was previously verified with firmware 2.1.0.
 
-After entering the host and port, choose one of five 80-column terminal profiles:
+After entering the host and port, choose one of six 80-column terminal profiles:
 
 | Key | Mode | Size | Telnet terminal type |
 | --- | --- | --- | --- |
@@ -108,14 +108,28 @@ After entering the host and port, choose one of five 80-column terminal profiles
 | 3 | VT100, with DEC special graphics | 80x24 | `VT100` |
 | 4 | ANSI mono: ANSI on a monochrome display | 80x25 | `ANSI` |
 | 5 | VT100 mono: VT100 on a monochrome display | 80x24 | `VT100` |
+| 6 | Amiga ANSI, with the Topaz 8 font and Latin-1 | 80x25 | `ANSI` |
 
-There is no 40-column PETSCII mode. ANSI and VT100 share the VDC renderer and
-CP437 font. VT100 follows the original `80Terminal_cc65` mode, with G0/G1
+There is no 40-column PETSCII mode. ANSI, VT100 and Amiga share the VDC
+renderer. ANSI and VT100 use the CP437 font; Amiga uses Topaz 8 (`topazfont`
+on the disk). Only the font a session needs is loaded from disk, and bank 1
+keeps a copy of the last one, so switching between ANSI and Amiga reads the
+other font again. VT100 follows the original `80Terminal_cc65` mode, with G0/G1
 character-set designation and SI/SO switching, scroll margins, origin mode,
 reverse index, configurable tab stops, saved cursor/rendition state, and
 application cursor keys. Both modes support editing controls and terminal
 identification/status replies. VT100 leaves the physical 25th row blank and
 reports 80x24 through Telnet NAWS.
+
+The Amiga profile follows the Flutter app's `amiga80`: Latin-1 text in
+Topaz, with C1 bytes `$80`-`$9F` never drawn. It accepts single-byte CSI (`$9B`) as
+well as `ESC [`. Newline mode is on (LF also returns the carriage, and
+`ESC[20l` turns that off), VT moves the cursor up and FF clears the screen.
+`CSI n u` (the Amiga line length) is ignored, while a bare `CSI u` still
+restores the cursor. Keys send Amiga console codes: cursor keys `CSI A`-`D`,
+F1-F6 and F8 `CSI 0~`-`CSI 7~`, CLR/HOME `CSI 44~`, DEL as backspace and
+RETURN as CR alone. F7 and HELP stay local. Amiga colour pens, italics and
+window-bound reports are not emulated.
 
 The mono profiles are display variants: the host negotiates ANSI or VT100
 exactly as for the colour profile. The profile is chosen per connection and

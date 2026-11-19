@@ -18,6 +18,7 @@
 #define H height
 #define ST_CHARSET 5
 #define ESC 27
+#define CSI 0x9b  /* Amiga single-byte CSI */
 #define ST_TEXT 0
 #define ST_ESC 1
 #define ST_CSI 2
@@ -42,6 +43,8 @@ static uint8_t tabs[10], last_printable;
 static uint8_t fg, bg, bright, bold, reverse, under, blink;
 static uint8_t saved_modes[15];
 static uint8_t monochrome, original_control, original_color;
+/* Amiga console: Topaz/Latin-1, CSI $9B, VT and FF, newline mode default. */
+static uint8_t amiga;
 /* Printable monochrome runs reach R31 together, using its autoincrement. */
 static uint8_t output[W], output_length;
 static uint16_t output_address;
@@ -104,6 +107,7 @@ static void reset_state(void)
     x = y = wrap = application_cursor = newline_mode = origin_mode = insert_mode = 0;
     g0_graphics = g1_graphics = active_charset = charset_target = 0;
     autowrap = cursor_visible = 1; scroll_top = 0; scroll_bottom = H - 1;
+    newline_mode = amiga;
     fg = 7; bg = bold = reverse = under = blink = 0; bright = 1; attr = 15;
     last_printable = ' '; reset_tabs(); save_state();
 }
@@ -341,7 +345,8 @@ static void csi(uint8_t final)
     case 'n': if (!private_mark && (params[0] == 5 || params[0] == 6)) report(params[0]); break;
     case 'c': report('c'); break;
     case 's': save_state(); break;
-    case 'u': restore_state(); break;
+    /* Amiga CSI n u sets the line length: only a bare CSI u restores. */
+    case 'u': if (!amiga || !params[0]) restore_state(); break;
     case 'r': scroll_top = parameter(0, 1) - 1; scroll_bottom = parameter(1, H) - 1; if (scroll_top >= scroll_bottom || scroll_bottom >= H) { scroll_top = 0; scroll_bottom = H - 1; } x = 0; y = origin_mode ? scroll_top : 0; break;
     case 'h': case 'l':
         for (i = 0; i < count; ++i) {
@@ -359,9 +364,14 @@ static void csi(uint8_t final)
         break;
     }
 }
+static uint8_t load_font(uint8_t device)
+{
+    return screen_load_font(device, amiga ? SCREEN_FONT_TOPAZ : SCREEN_FONT_CP437);
+}
 uint8_t ansi_terminal_init(ansi_send_callback send, uint8_t device, uint8_t mode_flags)
 {
-    if (!screen_load_cp437(device)) return 0;
+    amiga = mode_flags & ANSI_TERMINAL_AMIGA;
+    if (!load_font(device)) return 0;
     monochrome = mode_flags & ANSI_TERMINAL_MONOCHROME;
     output_length = 0;
     original_control = screen_reg_read(25);
@@ -393,7 +403,7 @@ void ansi_terminal_suspend(void)
 }
 uint8_t ansi_terminal_resume(uint8_t device)
 {
-    if (!screen_load_cp437(device)) return 0;
+    if (!load_font(device)) return 0;
     screen_restore_page(chars, attrs);
     monochrome_display();
     screen_show(chars, attrs);
@@ -417,6 +427,9 @@ void ansi_terminal_receive(uint8_t value)
     if (value < 32 || state != ST_TEXT) ansi_terminal_flush();
     if (value == ESC && state != ST_STRING && state != ST_STRING_ESC) {
         wrap = 0; state = ST_ESC; return;
+    }
+    if (value == CSI && amiga && state != ST_STRING && state != ST_STRING_ESC) {
+        wrap = 0; state = ST_ESC; value = '[';
     }
     if ((value == 24 || value == 26) && state != ST_TEXT) { state = ST_TEXT; return; }
     if (state == ST_ESC) {
@@ -451,21 +464,45 @@ void ansi_terminal_receive(uint8_t value)
         wrap = 0;
         do { if (x == W - 1) break; ++x; } while (!(tabs[x >> 3] & (1 << (x & 7))));
     }
+    else if (amiga && value == 11) { wrap = 0; if (y) --y; }
+    else if (amiga && value == 12) { wrap = 0; x = y = 0; clear_screen(0, H - 1); }
     else if (value == 10 || value == 11 || value == 12) line_feed();
     else if (value == 13) { wrap = 0; x = 0; }
     else if ((value == 14 || value == 15) && vt100_enabled) { wrap = 0; active_charset = value == 14; }
-    else if (value == 5) report('c'); else if (value >= 32 && value != 127) put(value);
+    else if (value == 5) report('c');
+    else if (value >= 32 && value != 127 && (!amiga || value < 0x80 || value >= 0xa0)) put(value);
     if (state == ST_TEXT) cursor();
 }
 void ansi_terminal_receive_buffer(const uint8_t *data, uint8_t length)
 { while (length--) ansi_terminal_receive(*data++); }
+/* Amiga console key reports, in single-byte CSI form as on an Amiga. */
+static uint8_t amiga_key(uint8_t key, uint8_t *out)
+{
+    out[0] = CSI;
+    if (key == 0x91 || key == 0x11 || key == 0x1d || key == 0x9d) {
+        out[1] = key == 0x91 ? 'A' : key == 0x11 ? 'B' : key == 0x1d ? 'C' : 'D';
+        return 2;
+    }
+    /* F1-F8 ($85-$8C: F1 F3 F5 F7 F2 F4 F6 F8) are Amiga F1-F8: CSI 0~-7~.
+     * F7 never gets here: it disconnects. */
+    if (key >= 0x85 && key <= 0x8c) {
+        key -= 0x85;
+        out[1] = (uint8_t)('0' + (key < 4 ? key * 2 : (key - 4) * 2 + 1));
+        out[2] = '~';
+        return 3;
+    }
+    if (key == 0x13) { out[1] = '4'; out[2] = '4'; out[3] = '~'; return 4; }
+    return 0;
+}
 uint8_t ansi_terminal_key(uint8_t key, uint8_t *out)
 {
     uint8_t final;
+    if (amiga && (final = amiga_key(key, out))) return final;
     if (key == 0x91 || key == 0x11 || key == 0x1d || key == 0x9d) { final = key == 0x91 ? 'A' : key == 0x11 ? 'B' : key == 0x1d ? 'C' : 'D'; out[0] = ESC; out[1] = application_cursor ? 'O' : '['; out[2] = final; return 3; }
     if (key == 0x13) { out[0]=ESC; out[1]='['; out[2]='H'; return 3; }
     if (key >= 0x41 && key <= 0x5a) key += 32; else if (key >= 0xc1 && key <= 0xda) key -= 0x80; else if (key == 0x14) key = 8;
-    if (key == 13) { out[0] = 13; if (newline_mode) { out[1] = 10; return 2; } return 1; }
+    /* Amiga newline mode is on by default, but RETURN still sends CR. */
+    if (key == 13) { out[0] = 13; if (newline_mode && !amiga) { out[1] = 10; return 2; } return 1; }
     if (key < 128) { out[0] = key; return 1; } return 0;
 }
 #ifdef __OSCAR64C__

@@ -2,18 +2,18 @@
 #include "phonebook.h"
 
 struct mode_name { const char *name; uint8_t profile; };
-/* The first five are written; the rest are accepted when reading. */
+/* The first six are written; the rest are accepted when reading. */
 static const struct mode_name modes[] = {
     {"petscii80", TELNET_PROFILE_PETSCII_80},
     {"ansi80", TELNET_PROFILE_ANSI_80},
     {"vt100", TELNET_PROFILE_VT100_80},
     {"ansi80mono", TELNET_PROFILE_ANSI_MONO_80},
     {"vt100mono", TELNET_PROFILE_VT100_MONO_80},
+    {"amiga80", TELNET_PROFILE_AMIGA_80},
     {"petscii40", TELNET_PROFILE_PETSCII_80},
-    {"amiga80", TELNET_PROFILE_ANSI_80},
     {"ascii80", TELNET_PROFILE_ANSI_MONO_80},  /* Flutter's plain white text */
 };
-#define WRITTEN_MODES 5
+#define WRITTEN_MODES 6
 #define MODE_COUNT (sizeof(modes) / sizeof(modes[0]))
 
 static char lower(char c) { return c >= 'A' && c <= 'Z' ? (char)(c + 32) : c; }

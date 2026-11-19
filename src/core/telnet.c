@@ -340,7 +340,7 @@ uint8_t telnet_profile_rows(enum telnet_profile profile)
 uint8_t telnet_profile_is_ansi(enum telnet_profile profile)
 {
     return profile == TELNET_PROFILE_ANSI_80 || profile == TELNET_PROFILE_ANSI_MONO_80 ||
-           telnet_profile_is_vt100(profile);
+           profile == TELNET_PROFILE_AMIGA_80 || telnet_profile_is_vt100(profile);
 }
 
 uint8_t telnet_profile_is_vt100(enum telnet_profile profile)
@@ -366,6 +366,8 @@ const char* telnet_profile_name(enum telnet_profile profile)
         return "ANSI mono 80 columns";
     case TELNET_PROFILE_VT100_MONO_80:
         return "VT100 mono 80x24";
+    case TELNET_PROFILE_AMIGA_80:
+        return "Amiga ANSI 80 columns";
     default:
         return "VT100 80x24";
     }

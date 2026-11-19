@@ -54,7 +54,7 @@ static const char *const list_keys[] = {
 static const char *const edit_keys[] = {
     "RETURN", "Next", "DEL", "Erase", "HOME", "Clear", "F7", "Cancel", 0 };
 static const char *const profile_keys[] = {
-    "1-5", "Terminal", "RETURN", "Keep", "F7", "Cancel", 0 };
+    "1-6", "Terminal", "RETURN", "Keep", "F7", "Cancel", 0 };
 static const char *const confirm_keys[] = { "Y", "Delete", "N", "Keep", 0 };
 
 

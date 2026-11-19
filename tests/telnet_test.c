@@ -105,6 +105,11 @@ static void test_terminal_type(void)
     reset(TELNET_PROFILE_VT100_80);
     feed(request, sizeof(request));
     expect_sent(expected_vt100, sizeof(expected_vt100));
+
+    /* Amiga is a local display: the host sees ANSI, as from the Flutter app. */
+    reset(TELNET_PROFILE_AMIGA_80);
+    feed(request, sizeof(request));
+    expect_sent(expected, sizeof(expected));
 }
 
 static void test_window_size(void)
@@ -151,6 +156,11 @@ static void test_window_size(void)
     assert(telnet_profile_is_mono(TELNET_PROFILE_ANSI_MONO_80) && telnet_profile_is_mono(TELNET_PROFILE_VT100_MONO_80));
     assert(!telnet_profile_is_mono(TELNET_PROFILE_ANSI_80) && !telnet_profile_is_mono(TELNET_PROFILE_VT100_80));
     assert(!telnet_profile_is_mono(TELNET_PROFILE_PETSCII_80));
+    reset(TELNET_PROFILE_AMIGA_80);
+    feed(request, sizeof(request));
+    expect_sent(expected_80, sizeof(expected_80));
+    assert(telnet_profile_is_ansi(TELNET_PROFILE_AMIGA_80) && !telnet_profile_is_vt100(TELNET_PROFILE_AMIGA_80));
+    assert(!telnet_profile_is_mono(TELNET_PROFILE_AMIGA_80));
 }
 
 static void test_subnegotiation_is_not_displayed(void)
